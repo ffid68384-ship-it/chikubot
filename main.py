@@ -5,26 +5,31 @@ import unicodedata
 import threading
 from flask import Flask
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    filters,
+    ContextTypes
+)
 
+# ----------------- FLASK KEEP-ALIVE -----------------
 web_app = Flask(__name__)
 
 @web_app.route('/')
 def home():
-    return "Bot is running!"
+    return "Chiku Escrow Bot is Running 24/7!"
 
 def run_web():
     port = int(os.environ.get("PORT", 10000))
     web_app.run(host='0.0.0.0', port=port)
 
-# Bot Configuration
+# ----------------- CONFIGURATION -----------------
 BOT_TOKEN = "8938665546:AAGvZElRJ36ji3LP7qyG4W90vC2ZFIQRKJY"
 OWNER_ID = 7364435907
+PROOF_CHANNEL = ""  # Agar proof channel me bhejna ho to jaise "@chikuescrowservice" dalein
 
-# Optional: Yahan apna Proof Channel ID ya Username daalein (e.g. "@chikuescrowservice")
-PROOF_CHANNEL = ""
-
-# In-Memory Storage for Deals & Stats
+# Memory Database
 DEALS_DB = {}
 STATS = {
     "total_deals": 0,
@@ -32,7 +37,7 @@ STATS = {
     "total_fees": 0.0
 }
 
-# Helper: Admin Rights Check
+# ----------------- HELPERS -----------------
 async def is_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     user_id = update.effective_user.id
     if user_id == OWNER_ID:
@@ -43,7 +48,6 @@ async def is_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     except Exception:
         return False
 
-# Normalize fancy unicode fonts to plain text
 def normalize_text(text: str) -> str:
     text = unicodedata.normalize('NFKD', text)
     small_caps = {
@@ -54,7 +58,6 @@ def normalize_text(text: str) -> str:
         text = text.replace(k, v)
     return text
 
-# Fee Calculation Helper
 def get_fee_breakdown(amount: float):
     if amount <= 190:
         fee = 10.0
@@ -87,7 +90,6 @@ def parse_amount(val_str: str) -> float:
         num *= 1000
     return num
 
-# Universal Extractor
 def extract_fields(text: str):
     norm = normalize_text(text)
     fields = {"seller": "", "buyer": "", "details": "", "amount": "", "till": "SECURE", "deal_id": ""}
@@ -114,7 +116,6 @@ def extract_fields(text: str):
                 fields["till"] = val
     return fields
 
-# Resolve User ID
 async def resolve_user_id(user_str: str, replied_msg, context: ContextTypes.DEFAULT_TYPE, chat_id: int):
     if not user_str or user_str == "N/A":
         return "N/A"
@@ -153,7 +154,7 @@ async def resolve_user_id(user_str: str, replied_msg, context: ContextTypes.DEFA
 
     return f"@{clean_user}" if not user_str.startswith("@") else user_str
 
-# 1. /form
+# ----------------- COMMANDS -----------------
 async def form(update: Update, context: ContextTypes.DEFAULT_TYPE):
     form_text = (
         "<b>ESCROW DEAL FORM</b>\n\n"
@@ -168,7 +169,6 @@ async def form(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(form_text, parse_mode="HTML")
 
-# 2. /fee or /fees
 async def fee_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         structure_text = (
@@ -203,7 +203,6 @@ async def fee_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(calc_text, parse_mode="HTML")
 
-# 3. /deal
 async def start_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update, context):
         await update.message.reply_text("❌ Sirf escrow admin yeh command chala sakta hai.")
@@ -274,7 +273,6 @@ async def start_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print(f"Pin error: {e}")
 
-# 4. /close
 async def close_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update, context):
         await update.message.reply_text("❌ Sirf escrow admin yeh command chala sakta hai.")
@@ -365,7 +363,6 @@ async def close_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             print(f"Channel log error: {e}")
 
-# 5. /cancel
 async def cancel_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update, context):
         await update.message.reply_text("❌ Sirf escrow admin deal cancel kar sakta hai.")
@@ -399,7 +396,6 @@ async def cancel_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         pass
 
-# 6. /refund
 async def refund_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update, context):
         await update.message.reply_text("❌ Sirf escrow admin refund process kar sakta hai.")
@@ -437,7 +433,6 @@ async def refund_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         pass
 
-# 7. /status
 async def status_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("⚠️ Deal ID daalein!\nExample: <code>/status DL-CHIKU-1234</code>", parse_mode="HTML")
@@ -463,7 +458,6 @@ async def status_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(status_msg, parse_mode="HTML")
 
-# 8. /stats
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     stats_msg = (
         f"📈 <b>@CHIKUESCROWSERVICE OFFICIAL STATS</b>\n"
@@ -476,7 +470,6 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(stats_msg, parse_mode="HTML")
 
-# 9. Text triggers & Fake Admin Protection
 async def handle_text_and_security(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
@@ -495,7 +488,6 @@ async def handle_text_and_security(update: Update, context: ContextTypes.DEFAULT
         await close_deal(update, context)
         return
 
-    # Security check for impostors
     if chat.type in ["group", "supergroup"]:
         if not await is_admin(update, context):
             user_full_name = (user.first_name or "") + " " + (user.last_name or "")
@@ -515,10 +507,12 @@ async def handle_text_and_security(update: Update, context: ContextTypes.DEFAULT
                 )
                 await update.message.reply_text(warning_text, parse_mode="HTML")
 
+# ----------------- MAIN APP -----------------
 if __name__ == '__main__':
     threading.Thread(target=run_web, daemon=True).start()
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     
     app.add_handler(CommandHandler("form", form))
     app.add_handler(CommandHandler("fee", fee_command))
-    app.ad
+    app.add_handler(CommandHandler("fees", fee_command))
+    app.add_handler(CommandHandler("deal", 
