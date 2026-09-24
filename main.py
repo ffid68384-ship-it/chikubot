@@ -1,9 +1,23 @@
+import os
 import random
+import threading
+from flask import Flask
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
+# Render ke liye dummy web server
+web_app = Flask(__name__)
+
+@web_app.route('/')
+def home():
+    return "Bot is running!"
+
+def run_web():
+    port = int(os.environ.get("PORT", 10000))
+    web_app.run(host='0.0.0.0', port=port)
+
 BOT_TOKEN = "8938665546:AAHsgsMsFQlu7sucO4qCHIoxC5P25MAuQFc"
-ADMIN_IDS = [7364435907] 
+ADMIN_IDS = [7364435907]
 
 async def deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -49,8 +63,9 @@ async def deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"Pin error: {e}")
 
 if __name__ == '__main__':
+    threading.Thread(target=run_web, daemon=True).start()
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("deal", deal))
     print("Bot chalu ho gaya hai...")
     app.run_polling()
-  
+    
