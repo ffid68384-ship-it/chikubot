@@ -21,10 +21,10 @@ def run_web():
 BOT_TOKEN = "8938665546:AAGvZElRJ36ji3LP7qyG4W90vC2ZFIQRKJY"
 OWNER_ID = 7364435907
 
-# Optional: Yahan apna Proof Channel ID ya Username daalein (e.g. "@chikuvouches" ya chat_id)
-PROOF_CHANNEL = ""  # Example: "@chikuescrowservice"
+# Optional: Yahan apna Proof Channel ID ya Username daalein (e.g. "@chikuescrowservice")
+PROOF_CHANNEL = ""
 
-# In-Memory Database for Stats & Status
+# In-Memory Storage for Deals & Stats
 DEALS_DB = {}
 STATS = {
     "total_deals": 0,
@@ -32,7 +32,7 @@ STATS = {
     "total_fees": 0.0
 }
 
-# Helper: Check Admin Rights
+# Helper: Admin Rights Check
 async def is_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     user_id = update.effective_user.id
     if user_id == OWNER_ID:
@@ -114,7 +114,7 @@ def extract_fields(text: str):
                 fields["till"] = val
     return fields
 
-# Helper to fetch User with Numeric ID
+# Resolve User ID
 async def resolve_user_id(user_str: str, replied_msg, context: ContextTypes.DEFAULT_TYPE, chat_id: int):
     if not user_str or user_str == "N/A":
         return "N/A"
@@ -153,7 +153,7 @@ async def resolve_user_id(user_str: str, replied_msg, context: ContextTypes.DEFA
 
     return f"@{clean_user}" if not user_str.startswith("@") else user_str
 
-# 1. Blank Form Command (/form)
+# 1. /form
 async def form(update: Update, context: ContextTypes.DEFAULT_TYPE):
     form_text = (
         "<b>ESCROW DEAL FORM</b>\n\n"
@@ -168,7 +168,7 @@ async def form(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(form_text, parse_mode="HTML")
 
-# 2. Fee Calculator Command (/fee or /fees)
+# 2. /fee or /fees
 async def fee_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         structure_text = (
@@ -203,7 +203,7 @@ async def fee_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(calc_text, parse_mode="HTML")
 
-# 3. Form Reply par ESCROW DEAL Slip (/deal)
+# 3. /deal
 async def start_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update, context):
         await update.message.reply_text("❌ Sirf escrow admin yeh command chala sakta hai.")
@@ -242,7 +242,6 @@ async def start_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     escrower_mention = escrower_user.mention_html()
     escrower_id = escrower_user.id
 
-    # Store in Database
     DEALS_DB[deal_id] = {
         "status": "ACTIVE",
         "seller": seller_formatted,
@@ -275,7 +274,7 @@ async def start_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print(f"Pin error: {e}")
 
-# 4. Short-Cut & Manual /close Command
+# 4. /close
 async def close_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update, context):
         await update.message.reply_text("❌ Sirf escrow admin yeh command chala sakta hai.")
@@ -291,7 +290,6 @@ async def close_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
         raw = replied_msg.text or replied_msg.caption
         norm = normalize_text(raw)
         
-        # Check Deal ID
         d_m = re.search(r"(?:deal\s*id|trade\s*id)\s*[:\-]?\s*(DL-CHIKU-[0-9]+)", norm, re.IGNORECASE)
         if d_m:
             found_deal_id = d_m.group(1).upper()
@@ -330,7 +328,6 @@ async def close_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     escrower_tag = f"@{escrower_user.username}" if escrower_user.username else escrower_user.mention_html()
     trade_id = found_deal_id if found_deal_id else f"DL-CHIKU-{random.randint(1000, 9999)}"
 
-    # Update Stats
     fee_num, _, _, _ = get_fee_breakdown(amount_num)
     STATS["total_deals"] += 1
     STATS["total_volume"] += amount_num
@@ -362,14 +359,13 @@ async def close_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print(f"Pin error: {e}")
 
-    # Channel Logger (Feature 2)
     if PROOF_CHANNEL:
         try:
             await context.bot.send_message(chat_id=PROOF_CHANNEL, text=message_text, parse_mode="HTML")
         except Exception as e:
             print(f"Channel log error: {e}")
 
-# 5. Deal Cancel Command (/cancel [reason])
+# 5. /cancel
 async def cancel_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update, context):
         await update.message.reply_text("❌ Sirf escrow admin deal cancel kar sakta hai.")
@@ -403,7 +399,7 @@ async def cancel_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         pass
 
-# 6. Refund Command (/refund [buyer_upi/notes])
+# 6. /refund
 async def refund_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update, context):
         await update.message.reply_text("❌ Sirf escrow admin refund process kar sakta hai.")
@@ -441,7 +437,7 @@ async def refund_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         pass
 
-# 7. Deal Status Tracker (/status <deal_id>)
+# 7. /status
 async def status_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("⚠️ Deal ID daalein!\nExample: <code>/status DL-CHIKU-1234</code>", parse_mode="HTML")
@@ -467,7 +463,7 @@ async def status_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(status_msg, parse_mode="HTML")
 
-# 8. Escrow Stats Command (/stats)
+# 8. /stats
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     stats_msg = (
         f"📈 <b>@CHIKUESCROWSERVICE OFFICIAL STATS</b>\n"
@@ -480,7 +476,7 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(stats_msg, parse_mode="HTML")
 
-# 9. Fake Admin Impersonator Warning & Text Triggers
+# 9. Text triggers & Fake Admin Protection
 async def handle_text_and_security(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
@@ -489,7 +485,6 @@ async def handle_text_and_security(update: Update, context: ContextTypes.DEFAULT
     chat = update.effective_chat
     text = update.message.text.strip().lower()
 
-    # Text Triggers (bina slash ke)
     if text in ["form", ".form"]:
         await form(update, context)
         return
@@ -500,12 +495,11 @@ async def handle_text_and_security(update: Update, context: ContextTypes.DEFAULT
         await close_deal(update, context)
         return
 
-    # Fake Admin Detection
+    # Security check for impostors
     if chat.type in ["group", "supergroup"]:
-        # Agar user real admin nahi hai
         if not await is_admin(update, context):
             user_full_name = (user.first_name or "") + " " + (user.last_name or "")
-            scam_keywords = ["chikunxt", "harshal", "chiku escrow", "admin", "official escrow", "escrow service"]
+            scam_keywords = ["chikunxt", "harshal", "chiku escrow", "official escrow"]
             
             is_suspicious = any(kw in user_full_name.lower() for kw in scam_keywords)
             if user.username:
@@ -515,5 +509,16 @@ async def handle_text_and_security(update: Update, context: ContextTypes.DEFAULT
                 warning_text = (
                     f"🚨 <b>FAKE ADMIN / SCAM ALERT!</b> 🚨\n"
                     f"━━━━━━━━━━━━━━━━━━━\n"
-                    f"⚠️ Member {user.mention_html()} (<code>{user.id}</code>) admin ka naam/impersonate karne ki koshish kar raha hai!\n"
-  
+                    f"⚠️ Member {user.mention_html()} (<code>{user.id}</code>) admin ka naam rakh kar scam karne ki koshish kar raha hai!\n"
+                    f"❌ <b>Yeh Real Admin NAHI HAI!</b>\n"
+                    f"👉 Real Admin: @CHIKUNXT (<code>{OWNER_ID}</code>)"
+                )
+                await update.message.reply_text(warning_text, parse_mode="HTML")
+
+if __name__ == '__main__':
+    threading.Thread(target=run_web, daemon=True).start()
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    
+    app.add_handler(CommandHandler("form", form))
+    app.add_handler(CommandHandler("fee", fee_command))
+    app.ad
