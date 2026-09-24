@@ -32,7 +32,7 @@ async def is_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     except Exception:
         return False
 
-# Normalize fancy unicode fonts to plain text
+# Normalize fancy unicode fonts to plain text for regex matching
 def normalize_text(text: str) -> str:
     text = unicodedata.normalize('NFKD', text)
     small_caps = {
@@ -45,6 +45,12 @@ def normalize_text(text: str) -> str:
 
 # Fee Calculation Helper
 def get_fee_breakdown(amount: float):
+    # Tiered Slabs:
+    # 1 to 190 -> 10
+    # 191 to 599 -> 20
+    # 600 to 2000 -> 3.5%
+    # 2001 to 3000 -> 3%
+    # > 3000 -> 3%
     if amount <= 190:
         fee = 10.0
         rate = "Flat ₹10"
@@ -126,7 +132,7 @@ async def calculate_fee(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(fee_text, parse_mode="HTML")
 
-# 3. Form Reply par Transaction Slip Generate karna (/deal)
+# 3. Form Reply par Active Deal Receipt Generate karna (/deal)
 async def start_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update, context):
         await update.message.reply_text("❌ Sirf escrow admin yeh command chala sakta hai.")
@@ -177,10 +183,19 @@ async def start_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
         m = re.search(r"escrow\s*till\s*[:\-]\s*([^\n\r]+)", norm_text, re.IGNORECASE)
         if m: escrow_till = m.group(1).strip()
 
-    def format_user_with_id(user_str):
-        if "(" in user_str and ")" in user_str:
+    # User ID Fetcher (Resolves User ID from entities, text, or group members)
+    async def format_user_with_id(user_str):
+        if not user_str or user_str == "N/A":
+            return "N/A"
+        # Agar already id likhi hai format me
+        id_match = re.search(r"\((\d+)\)", user_str)
+        if id_match:
             return user_str
-        clean_user = user_str.strip().lstrip("@")
+        
+        # Username clean
+        clean_user = user_str.strip().replace("@", "")
+        
+        # 1. Check message entities (direct mentions in replied msg)
         if replied_msg.entities:
             for entity in replied_msg.entities:
                 if entity.type == "text_mention" and entity.user:
@@ -188,15 +203,34 @@ async def start_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         return f"@{entity.user.username} ({entity.user.id})"
                     elif entity.user.first_name and clean_user.lower() in entity.user.first_name.lower():
                         return f"{entity.user.mention_html()} ({entity.user.id})"
+                elif entity.type == "mention":
+                    # Mention by @username
+                    mention_text = orig_text[entity.offset:entity.offset+entity.length].lstrip("@")
+                    if mention_text.lower() == clean_user.lower():
+                        try:
+                            member = await context.bot.get_chat_member(update.effective_chat.id, f"@{mention_text}")
+                            if member and member.user:
+                                return f"@{mention_text} ({member.user.id})"
+                        except Exception:
+                            pass
+
+        # 2. Try fetching directly via get_chat_member
+        try:
+            member = await context.bot.get_chat_member(update.effective_chat.id, f"@{clean_user}")
+            if member and member.user:
+                return f"@{clean_user} ({member.user.id})"
+        except Exception:
+            pass
+
         return user_str
 
-    seller_formatted = format_user_with_id(seller_raw)
-    buyer_formatted = format_user_with_id(buyer_raw)
+    seller_formatted = await format_user_with_id(seller_raw)
+    buyer_formatted = await format_user_with_id(buyer_raw)
 
     amount_num = parse_amount(amount_raw)
     if amount_num > 0:
         _, _, fee_display, _ = get_fee_breakdown(amount_num)
-        fee_line = f"\nFees {fee_display}"
+        fee_line = f"\n\nFees {fee_display}"
     else:
         fee_line = ""
 
@@ -205,15 +239,16 @@ async def start_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     escrower_mention = escrower_user.mention_html()
     escrower_id = escrower_user.id
 
+    # Exact format matching screenshot with premium emojis & spacing
     formatted_slip = (
-        f"<b>TRANSACTION</b>\n"
+        f"<b>ESCROW DEAL</b>\n"
         f"🪪 <b>DEAL ID:</b> {deal_id}\n\n"
-        f"• <b>ꜱᴇʟʟᴇʀ :</b> {seller_formatted}\n\n"
+        f"• <b>ꜱᴇʟʟᴇʀ :</b> {seller_formatted}\n"
         f"• <b>ʙᴜʏᴇʀ  :</b> {buyer_formatted}\n\n"
-        f"• <b>ᴅᴇᴀʟ ᴅᴇᴀᴛᴀɪʟꜱ :</b> {details}\n\n"
-        f"• <b>ᴅᴇᴀʟ ᴀᴍᴏᴜɴᴛ :</b> {amount_raw}\n\n"
+        f"• <b>ᴅᴇᴀʟ ᴅᴇᴀᴛᴀɪʟꜱ :</b> {details}\n"
+        f"• <b>ᴅᴇᴀʟ ᴀᴍᴏᴜɴᴛ :</b> {amount_raw}\n"
         f"• <b>ᴇꜱᴄʀᴏᴡ ᴛɪʟʟ :</b> {escrow_till}\n\n"
-        f"<b>Escrower :</b> {escrower_mention} ({escrower_id})\n"
+        f"<b>Escrower :</b> {escrower_mention} ({escrower_id})"
         f"{fee_line}"
     )
 
@@ -249,7 +284,6 @@ async def close_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     buyer = context.args[1]
     seller = context.args[2]
     
-    # Escrower mention format
     escrower_user = update.effective_user
     if escrower_user.username:
         escrower_tag = f"@{escrower_user.username}"
@@ -258,7 +292,6 @@ async def close_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     trade_id = f"DL-CHIKU-{random.randint(1000, 9999)}"
 
-    # Screenshot ke identical design format
     message_text = (
         f"✅ <b>Deal Completed</b>\n"
         f"🪪 <b>Trade ID:</b>\n"
@@ -297,4 +330,3 @@ if __name__ == '__main__':
     
     print("Bot chalu ho gaya hai...")
     app.run_polling()
-    
