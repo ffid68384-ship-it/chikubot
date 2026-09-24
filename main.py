@@ -5,7 +5,7 @@ import unicodedata
 import threading
 from flask import Flask
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
 web_app = Flask(__name__)
 
@@ -17,6 +17,7 @@ def run_web():
     port = int(os.environ.get("PORT", 10000))
     web_app.run(host='0.0.0.0', port=port)
 
+# Bot Configuration
 BOT_TOKEN = "8938665546:AAGvZElRJ36ji3LP7qyG4W90vC2ZFIQRKJY"
 OWNER_ID = 7364435907
 
@@ -31,15 +32,16 @@ async def is_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     except Exception:
         return False
 
-# Normalize unicode text
+# Normalize fancy unicode / small-caps fonts to plain ascii
 def normalize_text(text: str) -> str:
     text = unicodedata.normalize('NFKD', text)
     small_caps = {
         'ꜱ': 's', 'ᴇ': 'e', 'ʟ': 'l', 'ʀ': 'r', 'ʙ': 'b', 'ᴜ': 'u',
-        'ʏ': 'y', 'ᴅ': 'd', 'ᴀ': 'a', 'ᴛ': 't', 'ɪ': 'i', 'ᴏ': 'o', 'ᴡ': 'w'
+        'ʏ': 'y', 'ᴅ': 'd', 'ᴀ': 'a', 'ᴛ': 't', 'ɪ': 'i', 'ᴏ': 'o', 'ᴡ': 'w',
+        '•': '', ':': ':', '-': '-'
     }
     for k, v in small_caps.items():
-        text = text.replace(k, v).replace(k.upper(), v)
+        text = text.replace(k, v)
     return text
 
 # Fee Calculation Helper
@@ -64,6 +66,8 @@ def get_fee_breakdown(amount: float):
     return fee, rate, fee_display, seller_receives
 
 def parse_amount(val_str: str) -> float:
+    if not val_str:
+        return 0.0
     cleaned = val_str.lower().replace("₹", "").replace(",", "").replace("rs", "").strip()
     match = re.search(r"(\d+(\.\d+)?)(\s*k)?", cleaned)
     if not match:
@@ -73,40 +77,40 @@ def parse_amount(val_str: str) -> float:
         num *= 1000
     return num
 
-# Robust Field Extractor from Form text
+# Robust Field Extractor from any Form or Deal Slip text
 def extract_fields(text: str):
     norm = normalize_text(text)
     fields = {"seller": "", "buyer": "", "details": "", "amount": "", "till": "SECURE"}
     for line in norm.splitlines():
-        clean_l = re.sub(r'^[•\-\*\s]+', '', line).strip()
-        m = re.match(r"^(seller|buyer|deal\s*details|deal\s*deatails|details|deal\s*amount|amount|escrow\s*till|till)\s*[:\-]\s*(.*)$", clean_l, re.IGNORECASE)
+        line_clean = line.strip()
+        m = re.search(r"(seller|buyer|deal\s*details|deal\s*deatails|details|deal\s*amount|amount|escrow\s*till|till)\s*[:\-]\s*(.*)", line_clean, re.IGNORECASE)
         if m:
             key = m.group(1).lower().replace(" ", "")
             val = m.group(2).strip()
-            # Khali bullet ya doosra field aane par ignore
-            val = re.sub(r'^[•\-\*]\s*[A-Z\s]+:.*$', '', val).strip()
-            if "seller" in key:
+            if "seller" in key and not fields["seller"]:
                 fields["seller"] = val
-            elif "buyer" in key:
+            elif "buyer" in key and not fields["buyer"]:
                 fields["buyer"] = val
-            elif "detail" in key:
+            elif "detail" in key and not fields["details"]:
                 fields["details"] = val
-            elif "amount" in key:
+            elif "amount" in key and not fields["amount"]:
                 fields["amount"] = val
             elif "till" in key and val:
                 fields["till"] = val
     return fields
 
-# Helper to format User with their Numeric ID
+# Helper to fetch User with Numeric ID
 async def resolve_user_id(user_str: str, replied_msg, context: ContextTypes.DEFAULT_TYPE, chat_id: int):
     if not user_str or user_str == "N/A":
         return "N/A"
-    if re.search(r"\(\d+\)", user_str):
+    
+    # Agar ID already bracket me present ho
+    if "(" in user_str and ")" in user_str:
         return user_str
-
+        
     clean_user = user_str.strip().replace("@", "")
 
-    # 1. Message Entities (Direct mention)
+    # 1. Check direct entities from message
     if replied_msg and replied_msg.entities:
         for entity in replied_msg.entities:
             if entity.type == "text_mention" and entity.user:
@@ -118,17 +122,23 @@ async def resolve_user_id(user_str: str, replied_msg, context: ContextTypes.DEFA
                 mention_text = replied_msg.text[entity.offset:entity.offset+entity.length].lstrip("@")
                 if mention_text.lower() == clean_user.lower():
                     try:
-                        member = await context.bot.get_chat_member(chat_id, f"@{mention_text}")
-                        if member and member.user:
-                            return f"@{mention_text} ({member.user.id})"
+                        m = await context.bot.get_chat_member(chat_id, f"@{mention_text}")
+                        if m and m.user:
+                            return f"@{mention_text} ({m.user.id})"
                     except Exception:
                         pass
 
-    # 2. Try fetching from group
+    # 2. Check if the sender of the replied message is this user
+    if replied_msg and replied_msg.from_user:
+        u = replied_msg.from_user
+        if u.username and u.username.lower() == clean_user.lower():
+            return f"@{u.username} ({u.id})"
+
+    # 3. Direct chat member lookup
     try:
-        member = await context.bot.get_chat_member(chat_id, f"@{clean_user}")
-        if member and member.user:
-            return f"@{clean_user} ({member.user.id})"
+        m = await context.bot.get_chat_member(chat_id, f"@{clean_user}")
+        if m and m.user:
+            return f"@{clean_user} ({m.user.id})"
     except Exception:
         pass
 
@@ -248,7 +258,7 @@ async def start_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print(f"Pin error: {e}")
 
-# 4. Short-Cut /close Command (Auto-detect from replied slip or manual)
+# 4. Short-Cut /close Command (Automatic detect from replied deal slip)
 async def close_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update, context):
         await update.message.reply_text("❌ Sirf escrow admin yeh command chala sakta hai.")
@@ -258,13 +268,12 @@ async def close_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     buyer = ""
     seller = ""
 
-    # Short-Cut logic: Check replied message
+    # Short-Cut logic: Replied message ko deeply check karna
     replied_msg = update.message.reply_to_message
     if replied_msg and (replied_msg.text or replied_msg.caption):
         text = replied_msg.text or replied_msg.caption
         fields = extract_fields(text)
         
-        # Extract buyer & seller handles
         if fields["buyer"]:
             buyer = fields["buyer"].split()[0]
         if fields["seller"]:
@@ -272,7 +281,13 @@ async def close_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if fields["amount"]:
             amount_str = fields["amount"]
 
-    # Manual args override if provided
+        # Agar directly amount parse na hua ho, regex se number nikalna
+        if not amount_str:
+            amt_match = re.search(r"(?:amount|released)\s*[:\-]?\s*₹?\s*([\d,]+(?:\.\d+)?k?)", normalize_text(text), re.IGNORECASE)
+            if amt_match:
+                amount_str = amt_match.group(1)
+
+    # Manual arguments fallback
     if len(context.args) >= 1 and not amount_str:
         amount_str = context.args[0]
     if len(context.args) >= 2 and not buyer:
@@ -280,12 +295,11 @@ async def close_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) >= 3 and not seller:
         seller = context.args[2]
 
-    # Validate extracted data
     amount_num = parse_amount(amount_str)
     if amount_num <= 0 or not buyer or not seller:
         await update.message.reply_text(
-            "⚠️ <b>Short-cut:</b> Deal slip ka <b>Reply</b> karke <code>/close</code> likhein.\n"
-            "Ya manual likhein: <code>/close &lt;amount&gt; &lt;buyer&gt; &lt;seller&gt;</code>",
+            "⚠️ <b>Short-cut:</b> Bot ke <b>ESCROW DEAL</b> slip ka <b>Reply</b> karke <code>/close</code> likhein.\n"
+            "Ya manual likhein: <code>/close 4559 @buyer @seller</code>",
             parse_mode="HTML"
         )
         return
@@ -327,6 +341,16 @@ async def close_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print(f"Pin error: {e}")
 
+# 5. Bina slash ke triggers (form, fee)
+async def handle_text_triggers(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.text:
+        return
+    text = update.message.text.strip().lower()
+    if text in ["form", ".form"]:
+        await form(update, context)
+    elif text in ["fees", "fee", ".fee", ".fees"]:
+        await fee_command(update, context)
+
 if __name__ == '__main__':
     threading.Thread(target=run_web, daemon=True).start()
     app = ApplicationBuilder().token(BOT_TOKEN).build()
@@ -337,5 +361,9 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("deal", start_deal))
     app.add_handler(CommandHandler("close", close_deal))
     
+    # Text trigger for plain 'form' or 'fees'
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_triggers))
+    
     print("Bot chalu ho gaya hai...")
     app.run_polling()
+        
