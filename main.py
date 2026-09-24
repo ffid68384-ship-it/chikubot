@@ -40,7 +40,7 @@ def get_fee(amt):
 
 def parse_amt(val):
     if not val: return 0.0
-    c = val.lower().replace("₹","").replace(",","").replace("rs","").strip()
+    c = str(val).lower().replace("₹","").replace(",","").replace("rs","").strip()
     m = re.search(r"(\d+(\.\d+)?)(\s*k)?", c)
     if not m: return 0.0
     n = float(m.group(1))
@@ -51,8 +51,10 @@ def extract_f(t):
     f = {"seller": "", "buyer": "", "details": "", "amount": "", "till": "SECURE", "deal_id": ""}
     im = re.search(r"(?:deal\s*id|trade\s*id)\s*[:\-]?\s*([A-Za-z0-9\-]+)", n, re.I)
     if im: f["deal_id"] = im.group(1).strip()
+    
     for l in n.splitlines():
-        m = re.match(r"^[•\-\*\s]*(seller|buyer|deal\s*details|deal\s*deatails|details|deal\s*amount|amount|escrow\s*till|till)\s*[:\-]\s*(.*)$", l.strip(), re.I)
+        cl = re.sub(r'^[•\-\*\s]+', '', l).strip()
+        m = re.match(r"^(seller|buyer|deal\s*details|deal\s*deatails|details|deal\s*amount|amount|escrow\s*till|till)\s*[:\-]\s*(.*)$", cl, re.I)
         if m:
             k, v = m.group(1).lower().replace(" ",""), m.group(2).strip()
             if "seller" in k and not f["seller"]: f["seller"] = v
@@ -60,6 +62,17 @@ def extract_f(t):
             elif "detail" in k and not f["details"]: f["details"] = v
             elif "amount" in k and not f["amount"]: f["amount"] = v
             elif "till" in k and v: f["till"] = v
+
+    if not f["seller"]:
+        sm = re.search(r"seller\s*[:\-]\s*([^\n\r]+)", n, re.I)
+        if sm: f["seller"] = sm.group(1).strip()
+    if not f["buyer"]:
+        bm = re.search(r"buyer\s*[:\-]\s*([^\n\r]+)", n, re.I)
+        if bm: f["buyer"] = bm.group(1).strip()
+    if not f["amount"]:
+        am = re.search(r"(?:deal\s*amount|amount)\s*[:\-]\s*([^\n\r]+)", n, re.I)
+        if am: f["amount"] = am.group(1).strip()
+
     return f
 
 async def res_uid(u, rep, ctx, cid):
@@ -85,6 +98,15 @@ async def res_uid(u, rep, ctx, cid):
     except: pass
     return f"@{cln}" if not u.startswith("@") else u
 
+async def send_fee_result(update: Update, amt: float):
+    fee, rate, dsp, rcv = get_fee(amt)
+    await update.message.reply_text(
+        f"📊 <b>@CHIKUESCROWSERVICE FEE CALCULATOR</b>\n━━━━━━━━━━━━━━━━━━━\n"
+        f"💰 <b>Deal Amount:</b> ₹{amt:,.0f}\n⚡ <b>Fee Rate:</b> {rate}\n💵 <b>Escrow Fee:</b> ₹{fee:,.0f}\n"
+        f"━━━━━━━━━━━━━━━━━━━\n✅ <b>Seller Receives:</b> ₹{rcv:,.0f}\n\n📱 <b>RG :</b> @CHIKUNXT",
+        parse_mode="HTML"
+    )
+
 async def form(u: Update, c: ContextTypes.DEFAULT_TYPE):
     await u.message.reply_text(
         "<b>ESCROW DEAL FORM</b>\n\n• <b>SELLER :</b> \n• <b>BUYER :</b> \n"
@@ -100,21 +122,15 @@ async def fee_command(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await u.message.reply_text(
             "<b>@CHIKUESCROWSERVICE CHARGES -</b>\n\n• Under ₹190 - ₹10\n• ₹191 To ₹599 - ₹20\n"
             "• ₹600 To ₹2000 - 3.5%\n• ₹2001 To ₹3000 - 3%\n• Upper Than ₹3000 - 3%\n\n"
-            "📱 <b>RG :</b> @CHIKUNXT\n━━━━━━━━━━━━━━━━━━━\n💡 Check amount: <code>/fee 2000</code>",
+            "📱 <b>RG :</b> @CHIKUNXT\n━━━━━━━━━━━━━━━━━━━\n💡 Check amount: <code>fees 2000</code> ya <code>/fee 2000</code>",
             parse_mode="HTML"
         )
         return
     amt = parse_amt(c.args[0])
     if amt <= 0:
-        await u.message.reply_text("❌ Sahi amount likhein (e.g. <code>/fee 1500</code>)!", parse_mode="HTML")
+        await u.message.reply_text("❌ Sahi amount likhein (e.g. <code>fees 2000</code>)!", parse_mode="HTML")
         return
-    fee, rate, dsp, rcv = get_fee(amt)
-    await u.message.reply_text(
-        f"📊 <b>@CHIKUESCROWSERVICE FEE CALCULATOR</b>\n━━━━━━━━━━━━━━━━━━━\n"
-        f"💰 <b>Deal Amount:</b> ₹{amt:,.0f}\n⚡ <b>Fee Rate:</b> {rate}\n💵 <b>Escrow Fee:</b> ₹{fee:,.0f}\n"
-        f"━━━━━━━━━━━━━━━━━━━\n✅ <b>Seller Receives:</b> ₹{rcv:,.0f}\n\n📱 <b>RG :</b> @CHIKUNXT",
-        parse_mode="HTML"
-    )
+    await send_fee_result(u, amt)
 
 async def start_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(u, c):
@@ -148,25 +164,36 @@ async def close_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(u, c):
         await u.message.reply_text("❌ Sirf escrow admin yeh command chala sakta hai.")
         return
+    
     amt_str, buyer, seller, did = "", "", "", None
     rep = u.message.reply_to_message
     if rep and (rep.text or rep.caption):
-        n = norm_txt(rep.text or rep.caption)
-        dm = re.search(r"(?:deal\s*id|trade\s*id)\s*[:\-]?\s*(DL-CHIKU-[0-9]+)", n, re.I)
-        if dm: did = dm.group(1).upper()
-        sm = re.search(r"seller\s*[:\-]\s*(@?[A-Za-z0-9_]+)", n, re.I)
-        bm = re.search(r"buyer\s*[:\-]\s*(@?[A-Za-z0-9_]+)", n, re.I)
-        if sm: seller = sm.group(1).strip() if sm.group(1).strip().startswith("@") else f"@{sm.group(1).strip()}"
-        if bm: buyer = bm.group(1).strip() if bm.group(1).strip().startswith("@") else f"@{bm.group(1).strip()}"
-        am = re.search(r"(?:deal amount|amount)\s*[:\-]\s*([^\n\r]+)", n, re.I)
-        if am: amt_str = am.group(1).strip()
+        raw = rep.text or rep.caption
+        f = extract_f(raw)
+        
+        if f["deal_id"]: did = f["deal_id"]
+        if f["amount"]: amt_str = f["amount"]
+        
+        if f["seller"]:
+            s_match = re.search(r"@([A-Za-z0-9_]+)", f["seller"])
+            seller = f"@{s_match.group(1)}" if s_match else f["seller"].split()[0]
+        if f["buyer"]:
+            b_match = re.search(r"@([A-Za-z0-9_]+)", f["buyer"])
+            buyer = f"@{b_match.group(1)}" if b_match else f["buyer"].split()[0]
+
     if len(c.args) >= 1 and not amt_str: amt_str = c.args[0]
     if len(c.args) >= 2 and not buyer: buyer = c.args[1]
     if len(c.args) >= 3 and not seller: seller = c.args[2]
+
     amt_num = parse_amt(amt_str)
     if amt_num <= 0 or not buyer or not seller:
-        await u.message.reply_text("⚠️ Deal slip ka <b>Reply</b> karke <code>/close</code> likhein!", parse_mode="HTML")
+        await u.message.reply_text(
+            "⚠️ Deal slip ka <b>Reply</b> karke <code>/close</code> likhein!\n"
+            "Ya manual likhein: <code>/close 2000 @buyer @seller</code>", 
+            parse_mode="HTML"
+        )
         return
+
     eu = u.effective_user
     etag = f"@{eu.username}" if eu.username else eu.mention_html()
     tid = did if did else f"DL-CHIKU-{random.randint(1000, 9999)}"
@@ -175,6 +202,7 @@ async def close_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     STATS["total_volume"] += amt_num
     STATS["total_fees"] += fee_num
     if tid in DEALS_DB: DEALS_DB[tid]["status"] = "COMPLETED"
+
     txt = (
         f"✅ <b>Deal Completed</b>\n🪪 <b>Trade ID:</b>\n{tid}\n📤 <b>Released:</b> ₹{amt_num:,.2f}\n"
         f"👤 <b>Escrowed By:</b>\n{etag}\n\n~ {buyer} and {seller}\nare requested to drop the\n"
@@ -187,6 +215,28 @@ async def close_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
         try: await c.bot.send_message(chat_id=PROOF_CHANNEL, text=txt, parse_mode="HTML")
         except: pass
 
+# /hold command
+async def hold_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    if not await is_admin(u, c): return
+    rep = u.message.reply_to_message
+    if not rep or not (rep.text or rep.caption):
+        await u.message.reply_text("⚠️ Deal slip ka <b>Reply</b> karke <code>/hold [reason]</code> likhein!", parse_mode="HTML")
+        return
+    rsn = " ".join(c.args) if c.args else "Verification / Dispute Under Review"
+    f = extract_f(rep.text or rep.caption)
+    did = f["deal_id"] if f["deal_id"] else "UNKNOWN"
+    if did in DEALS_DB: DEALS_DB[did]["status"] = "ON HOLD"
+    txt = (
+        f"⏳ <b>DEAL ON HOLD</b>\n━━━━━━━━━━━━━━━━━━━\n"
+        f"🪪 <b>Deal ID:</b> {did}\n"
+        f"⚠️ <b>Reason:</b> {rsn}\n"
+        f"👤 <b>Action By:</b> {u.effective_user.mention_html()}\n\n"
+        f"🔒 <i>Payment release is paused until further update.</i>"
+    )
+    sm = await u.message.reply_text(txt, parse_mode="HTML")
+    try: await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id)
+    except: pass
+
 async def cancel_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(u, c): return
     rep = u.message.reply_to_message
@@ -194,8 +244,8 @@ async def cancel_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await u.message.reply_text("⚠️ Deal slip ka <b>Reply</b> karke <code>/cancel</code> likhein!", parse_mode="HTML")
         return
     rsn = " ".join(c.args) if c.args else "Mutual Agreement"
-    dm = re.search(r"(?:deal\s*id|trade\s*id)\s*[:\-]?\s*([A-Za-z0-9\-]+)", norm_txt(rep.text or rep.caption), re.I)
-    did = dm.group(1).upper() if dm else "UNKNOWN"
+    f = extract_f(rep.text or rep.caption)
+    did = f["deal_id"] if f["deal_id"] else "UNKNOWN"
     if did in DEALS_DB: DEALS_DB[did]["status"] = "CANCELLED"
     txt = f"❌ <b>DEAL CANCELLED</b>\n━━━━━━━━━━━━━━━━━━━\n🪪 <b>Deal ID:</b> {did}\n⚠️ <b>Reason:</b> {rsn}\n👤 <b>Action By:</b> {u.effective_user.mention_html()}"
     sm = await u.message.reply_text(txt, parse_mode="HTML")
@@ -227,8 +277,13 @@ async def status_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await u.message.reply_text(f"❓ Deal ID <code>{did}</code> record me nahi mili.", parse_mode="HTML")
         return
     d = DEALS_DB[did]
-    bdg = "🟢" if d["status"] == "ACTIVE" else ("✅" if d["status"] == "COMPLETED" else "❌")
-    await u.message.reply_text(f"🔍 <b>DEAL STATUS</b>\n🪪 <b>ID:</b> {did}\n📌 <b>Status:</b> {bdg} {d['status']}\n💰 <b>Amount:</b> ₹{d['amount']:,.0f}\n👤 <b>Seller:</b> {d['seller']}\n👤 <b>Buyer:</b> {d['buyer']}", parse_mode="HTML")
+    status_emoji = {"ACTIVE": "🟢", "COMPLETED": "✅", "CANCELLED": "❌", "ON HOLD": "⏳"}
+    bdg = status_emoji.get(d["status"], "📌")
+    await u.message.reply_text(
+        f"🔍 <b>DEAL STATUS</b>\n🪪 <b>ID:</b> {did}\n📌 <b>Status:</b> {bdg} {d['status']}\n"
+        f"💰 <b>Amount:</b> ₹{d['amount']:,.0f}\n👤 <b>Seller:</b> {d['seller']}\n👤 <b>Buyer:</b> {d['buyer']}", 
+        parse_mode="HTML"
+    )
 
 async def stats_cmd(u: Update, c: ContextTypes.DEFAULT_TYPE):
     await u.message.reply_text(
@@ -238,30 +293,66 @@ async def stats_cmd(u: Update, c: ContextTypes.DEFAULT_TYPE):
         parse_mode="HTML"
     )
 
+# Text Handler (Bina Slash Triggers)
 async def handle_txt(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not u.message or not u.message.text: return
-    t = u.message.text.strip().lower()
-    if t in ["form", ".form"]: await form(u, c); return
-    elif t in ["fees", "fee", ".fee", ".fees"]: await fee_command(u, c); return
-    elif t in ["close", ".close"]: await close_deal(u, c); return
+    t = u.message.text.strip()
+    tl = t.lower()
+    
+    # Simple word triggers
+    if tl in ["form", ".form"]:
+        await form(u, c); return
+    elif tl in ["fees", "fee", ".fee", ".fees"]:
+        await fee_command(u, c); return
+    elif tl in ["close", ".close"]:
+        await close_deal(u, c); return
+    elif tl.startswith("hold") or tl.startswith(".hold"):
+        if tl == "hold" or tl == ".hold":
+            c.args = []
+        else:
+            c.args = t.split()[1:]
+        await hold_deal(u, c); return
+    elif tl.startswith("cancel") or tl.startswith(".cancel"):
+        c.args = t.split()[1:]
+        await cancel_deal(u, c); return
+
+    # Flexible Fee Calculator Regex (supports: "fees 2000", "fee 2000", "fees 300000", "/fee 29k", etc.)
+    fee_match = re.match(r"^(?:fee|fees|\.fee|\.fees|\/fee|\/fees)\s+([^\s]+)", tl)
+    if fee_match:
+        amt = parse_amt(fee_match.group(1))
+        if amt > 0:
+            await send_fee_result(u, amt)
+            return
+
+    # Anti Fake Admin Protection
     if u.effective_chat.type in ["group", "supergroup"]:
         if not await is_admin(u, c):
             fn = ((u.effective_user.first_name or "") + " " + (u.effective_user.last_name or "")).lower()
             un = (u.effective_user.username or "").lower()
             if any(k in fn or k in un for k in ["chikunxt", "harshal", "chiku escrow"]):
-                await u.message.reply_text(f"🚨 <b>FAKE ADMIN ALERT!</b>\n⚠️ {u.effective_user.mention_html()} real admin nahi hai!\n👉 Real: @CHIKUNXT (<code>{OWNER_ID}</code>)", parse_mode="HTML")
+                await u.message.reply_text(
+                    f"🚨 <b>FAKE ADMIN ALERT!</b>\n"
+                    f"⚠️ {u.effective_user.mention_html()} real admin nahi hai!\n"
+                    f"👉 Real Admin: @CHIKUNXT (<code>{OWNER_ID}</code>)", 
+                    parse_mode="HTML"
+                )
 
 if __name__ == '__main__':
     threading.Thread(target=run_web, daemon=True).start()
     app = ApplicationBuilder().token(BOT_TOKEN).build()
+    
     app.add_handler(CommandHandler("form", form))
     app.add_handler(CommandHandler("fee", fee_command))
     app.add_handler(CommandHandler("fees", fee_command))
     app.add_handler(CommandHandler("deal", start_deal))
     app.add_handler(CommandHandler("close", close_deal))
+    app.add_handler(CommandHandler("hold", hold_deal))
     app.add_handler(CommandHandler("cancel", cancel_deal))
     app.add_handler(CommandHandler("refund", refund_deal))
     app.add_handler(CommandHandler("status", status_deal))
     app.add_handler(CommandHandler("stats", stats_cmd))
+    
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_txt))
+    
     app.run_polling()
+        
