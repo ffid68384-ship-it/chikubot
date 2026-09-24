@@ -150,7 +150,18 @@ async def start_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
         fee_line = f"\n\nFees {dsp}"
     did = f"DL-CHIKU-{random.randint(1000, 9999)}"
     eu = u.effective_user
-    DEALS_DB[did] = {"status": "ACTIVE", "seller": s_fmt, "buyer": b_fmt, "amount": amt_num, "fee": fee_num, "escrower": eu.first_name}
+    etag = f"@{eu.username}" if eu.username else eu.first_name
+
+    DEALS_DB[did] = {
+        "status": "ACTIVE",
+        "seller": s_fmt,
+        "buyer": b_fmt,
+        "amount": amt_num,
+        "fee": fee_num,
+        "escrower": etag,
+        "details": f["details"] or "N/A"
+    }
+
     slip = (
         f"<b>ESCROW DEAL</b>\n🪪 <b>DEAL ID:</b> {did}\n\n• <b>ꜱᴇʟʟᴇʀ :</b> {s_fmt}\n• <b>ʙᴜʏᴇʀ  :</b> {b_fmt}\n\n"
         f"• <b>ᴅᴇᴀʟ ᴅᴇᴀᴛᴀɪʟꜱ :</b> {f['details'] or 'N/A'}\n• <b>ᴅᴇᴀʟ ᴀᴍᴏᴜɴᴛ :</b> {f['amount'] or 'N/A'}\n"
@@ -215,7 +226,6 @@ async def close_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
         try: await c.bot.send_message(chat_id=PROOF_CHANNEL, text=txt, parse_mode="HTML")
         except: pass
 
-# /hold command
 async def hold_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(u, c): return
     rep = u.message.reply_to_message
@@ -259,8 +269,10 @@ async def refund_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await u.message.reply_text("⚠️ Deal slip ka <b>Reply</b> karke <code>/refund</code> likhein!", parse_mode="HTML")
         return
     f = extract_f(rep.text or rep.caption)
+    did = f["deal_id"] if f["deal_id"] else "N/A"
+    if did in DEALS_DB: DEALS_DB[did]["status"] = "REFUNDED"
     txt = (
-        f"↩️ <b>ESCROW REFUND PROCESSED</b>\n━━━━━━━━━━━━━━━━━━━\n🪪 <b>Deal ID:</b> {f['deal_id'] or 'N/A'}\n"
+        f"↩️ <b>ESCROW REFUND PROCESSED</b>\n━━━━━━━━━━━━━━━━━━━\n🪪 <b>Deal ID:</b> {did}\n"
         f"👤 <b>Refund To:</b> {f['buyer'] or 'Buyer'}\n💰 <b>Amount:</b> ₹{parse_amt(f['amount']):,.0f}\n"
         f"👤 <b>Escrower:</b> {u.effective_user.mention_html()}\n\n⚠️ <i>Escrow fees non-refundable as per policy.</i>"
     )
@@ -277,7 +289,7 @@ async def status_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await u.message.reply_text(f"❓ Deal ID <code>{did}</code> record me nahi mili.", parse_mode="HTML")
         return
     d = DEALS_DB[did]
-    status_emoji = {"ACTIVE": "🟢", "COMPLETED": "✅", "CANCELLED": "❌", "ON HOLD": "⏳"}
+    status_emoji = {"ACTIVE": "🟢", "COMPLETED": "✅", "CANCELLED": "❌", "ON HOLD": "⏳", "REFUNDED": "↩️"}
     bdg = status_emoji.get(d["status"], "📌")
     await u.message.reply_text(
         f"🔍 <b>DEAL STATUS</b>\n🪪 <b>ID:</b> {did}\n📌 <b>Status:</b> {bdg} {d['status']}\n"
@@ -293,30 +305,73 @@ async def stats_cmd(u: Update, c: ContextTypes.DEFAULT_TYPE):
         parse_mode="HTML"
     )
 
+# 🛡️ ADMIN HOLD TRACKER (OWNER-ONLY LOCK)
+async def admin_hold_cmd(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    # Sirf Owner access kar sakta hai
+    if u.effective_user.id != OWNER_ID:
+        await u.message.reply_text("❌ Yeh command sirf Bot Owner (@CHIKUNXT) hi dekh sakta hai.")
+        return
+
+    hold_deals = {did: info for did, info in DEALS_DB.items() if info["status"] in ["ACTIVE", "ON HOLD"]}
+    
+    if not hold_deals:
+        await u.message.reply_text("🛡️ <b>ADMIN HOLD</b>\n\nAbhi koi active hold deal nahi hai. Sabhi deals completed ya cancelled hain.", parse_mode="HTML")
+        return
+
+    admin_groups = {}
+    grand_total = 0.0
+
+    for did, info in hold_deals.items():
+        admin = info.get("escrower", "Unknown Escrower")
+        if admin not in admin_groups:
+            admin_groups[admin] = []
+        admin_groups[admin].append((did, info))
+        grand_total += info["amount"]
+
+    out = ["🛡️ <b>ADMIN HOLD</b>\n"]
+    for admin, deals in admin_groups.items():
+        admin_total = sum(d[1]["amount"] for d in deals)
+        out.append(f"🛡️ <b>{admin}</b> — Total Hold: ₹{admin_total:,.2f}")
+        for did, d in deals:
+            amt = d["amount"]
+            fee, rate, _, net = get_fee(amt)
+            b_tag = d["buyer"].split()[0] if d["buyer"] else "@Buyer"
+            s_tag = d["seller"].split()[0] if d["seller"] else "@Seller"
+            out.append(
+                f"  • <b>{did}</b> — ₹{amt:,.2f}\n"
+                f"    Buyer: {b_tag}\n"
+                f"    Seller: {s_tag}\n"
+                f"    Fee: {rate} — Net: ₹{net:,.2f}\n"
+                f"    Detail: {d.get('details', 'N/A')}"
+            )
+        out.append("")
+
+    out.append("──────────────────")
+    out.append(f"🛡️ <b>ALL ADMINS TOTAL HOLD: ₹{grand_total:,.2f}</b>")
+
+    await u.message.reply_text("\n".join(out), parse_mode="HTML")
+
 # Text Handler (Bina Slash Triggers)
 async def handle_txt(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not u.message or not u.message.text: return
     t = u.message.text.strip()
     tl = t.lower()
     
-    # Simple word triggers
     if tl in ["form", ".form"]:
         await form(u, c); return
     elif tl in ["fees", "fee", ".fee", ".fees"]:
         await fee_command(u, c); return
     elif tl in ["close", ".close"]:
         await close_deal(u, c); return
+    elif tl in ["adminhold", ".adminhold"]:
+        await admin_hold_cmd(u, c); return
     elif tl.startswith("hold") or tl.startswith(".hold"):
-        if tl == "hold" or tl == ".hold":
-            c.args = []
-        else:
-            c.args = t.split()[1:]
+        c.args = [] if tl in ["hold", ".hold"] else t.split()[1:]
         await hold_deal(u, c); return
     elif tl.startswith("cancel") or tl.startswith(".cancel"):
         c.args = t.split()[1:]
         await cancel_deal(u, c); return
 
-    # Flexible Fee Calculator Regex (supports: "fees 2000", "fee 2000", "fees 300000", "/fee 29k", etc.)
     fee_match = re.match(r"^(?:fee|fees|\.fee|\.fees|\/fee|\/fees)\s+([^\s]+)", tl)
     if fee_match:
         amt = parse_amt(fee_match.group(1))
@@ -324,7 +379,6 @@ async def handle_txt(u: Update, c: ContextTypes.DEFAULT_TYPE):
             await send_fee_result(u, amt)
             return
 
-    # Anti Fake Admin Protection
     if u.effective_chat.type in ["group", "supergroup"]:
         if not await is_admin(u, c):
             fn = ((u.effective_user.first_name or "") + " " + (u.effective_user.last_name or "")).lower()
@@ -351,8 +405,9 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("refund", refund_deal))
     app.add_handler(CommandHandler("status", status_deal))
     app.add_handler(CommandHandler("stats", stats_cmd))
+    app.add_handler(CommandHandler("adminhold", admin_hold_cmd))
     
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_txt))
     
     app.run_polling()
-        
+    
