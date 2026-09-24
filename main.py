@@ -1,6 +1,7 @@
 import os
 import re
 import random
+import unicodedata
 import threading
 from flask import Flask
 from telegram import Update
@@ -16,7 +17,6 @@ def run_web():
     port = int(os.environ.get("PORT", 10000))
     web_app.run(host='0.0.0.0', port=port)
 
-# Aapka Naya Bot Token
 BOT_TOKEN = "8938665546:AAGvZElRJ36ji3LP7qyG4W90vC2ZFIQRKJY"
 OWNER_ID = 7364435907
 
@@ -31,14 +31,20 @@ async def is_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     except Exception:
         return False
 
+# Normalize fancy unicode fonts to plain text
+def normalize_text(text: str) -> str:
+    text = unicodedata.normalize('NFKD', text)
+    # Map small caps to normal ascii
+    small_caps = {
+        'ꜱ': 's', 'ᴇ': 'e', 'ʟ': 'l', 'ʀ': 'r', 'ʙ': 'b', 'ᴜ': 'u',
+        'ʏ': 'y', 'ᴅ': 'd', 'ᴀ': 'a', 'ᴛ': 't', 'ɪ': 'i', 'ᴏ': 'o', 'ᴡ': 'w'
+    }
+    for k, v in small_caps.items():
+        text = text.replace(k, v).replace(k.upper(), v)
+    return text
+
 # Fee Calculation Helper
 def get_fee_breakdown(amount: float):
-    # Slab Rules:
-    # 1 se 190 -> 10
-    # 191 se 599 -> 20
-    # 600 se 2000 -> 3.5%
-    # 2001 se 3000 -> 3%
-    # > 3000 -> 3%
     if amount <= 190:
         fee = 10.0
         rate = "Flat ₹10"
@@ -58,9 +64,8 @@ def get_fee_breakdown(amount: float):
     seller_receives = amount - fee
     return fee, rate, fee_display, seller_receives
 
-# Parse Amount string (e.g. 29k -> 29000, 500 -> 500)
 def parse_amount(val_str: str) -> float:
-    cleaned = val_str.lower().replace("₹", "").replace(",", "").strip()
+    cleaned = val_str.lower().replace("₹", "").replace(",", "").replace("rs", "").strip()
     match = re.search(r"(\d+(\.\d+)?)(\s*k)?", cleaned)
     if not match:
         return 0.0
@@ -93,7 +98,7 @@ async def form(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(form_text, parse_mode="HTML")
 
-# 2. Automatic Fee Calculator Command (/fee <amount>)
+# 2. Fee Calculator Command (/fee <amount>)
 async def calculate_fee(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text(
@@ -128,32 +133,56 @@ async def start_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     replied_msg = update.message.reply_to_message
-    if not replied_msg or not replied_msg.text:
+    if not replied_msg or not (replied_msg.text or replied_msg.caption):
         await update.message.reply_text(
             "⚠️ Kripya bhare hue <b>ESCROW FORM</b> ka <b>Reply</b> karke <code>/deal</code> likhein!",
             parse_mode="HTML"
         )
         return
 
-    text = replied_msg.text
+    orig_text = replied_msg.text or replied_msg.caption
+    norm_text = normalize_text(orig_text)
 
-    def extract_val(pattern):
-        match = re.search(pattern, text, re.IGNORECASE)
-        return match.group(1).strip() if match else "N/A"
+    # Line-by-line smart extractor
+    def extract_field(keywords):
+        for line in norm_text.splitlines():
+            clean_l = re.sub(r'^[•\-\*\s]+', '', line).strip()
+            for kw in keywords:
+                pattern = rf"^{kw}\s*[:\-]\s*(.+)$"
+                m = re.match(pattern, clean_l, re.IGNORECASE)
+                if m:
+                    val = m.group(1).strip()
+                    if val:
+                        return val
+        return "N/A"
 
-    seller_raw = extract_val(r"SELLER\s*:\s*(.+)")
-    buyer_raw = extract_val(r"BUYER\s*:\s*(.+)")
-    details = extract_val(r"DEAL\s*DEATAILS\s*:\s*(.+)|DEAL\s*DETAILS\s*:\s*(.+)")
-    amount_raw = extract_val(r"DEAL\s*AMOUNT\s*:\s*(.+)")
-    escrow_till = extract_val(r"ESCROW\s*TILL\s*:\s*(.+)")
+    seller_raw = extract_field(["seller", "sller"])
+    buyer_raw = extract_field(["buyer", "byer"])
+    details = extract_field(["deal details", "deal deatails", "details", "deatails"])
+    amount_raw = extract_field(["deal amount", "amount"])
+    escrow_till = extract_field(["escrow till", "till"])
 
-    # Agar form mein Telegram entities/mentions hain toh user ID extract karna
+    # Fallback agar line separator me match na hua ho
+    if seller_raw == "N/A":
+        m = re.search(r"seller\s*[:\-]\s*([^\n\r]+)", norm_text, re.IGNORECASE)
+        if m: seller_raw = m.group(1).strip()
+    if buyer_raw == "N/A":
+        m = re.search(r"buyer\s*[:\-]\s*([^\n\r]+)", norm_text, re.IGNORECASE)
+        if m: buyer_raw = m.group(1).strip()
+    if details == "N/A":
+        m = re.search(r"deal\s*dea?tails\s*[:\-]\s*([^\n\r]+)", norm_text, re.IGNORECASE)
+        if m: details = m.group(1).strip()
+    if amount_raw == "N/A":
+        m = re.search(r"deal\s*amount\s*[:\-]\s*([^\n\r]+)", norm_text, re.IGNORECASE)
+        if m: amount_raw = m.group(1).strip()
+    if escrow_till == "N/A":
+        m = re.search(r"escrow\s*till\s*[:\-]\s*([^\n\r]+)", norm_text, re.IGNORECASE)
+        if m: escrow_till = m.group(1).strip()
+
+    # User ID formatting
     def format_user_with_id(user_str):
-        # Agar user_str me already bracket me id hai to waisi hi rakhna
         if "(" in user_str and ")" in user_str:
             return user_str
-        
-        # Message entities se match karna
         clean_user = user_str.strip().lstrip("@")
         if replied_msg.entities:
             for entity in replied_msg.entities:
@@ -180,7 +209,6 @@ async def start_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     escrower_mention = escrower_user.mention_html()
     escrower_id = escrower_user.id
 
-    # Aapka exact format
     formatted_slip = (
         f"<b>TRANSACTION</b>\n"
         f"🪪 <b>DEAL ID:</b> {deal_id}\n\n"
