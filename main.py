@@ -16,7 +16,8 @@ def run_web():
     port = int(os.environ.get("PORT", 10000))
     web_app.run(host='0.0.0.0', port=port)
 
-BOT_TOKEN = "8938665546:AAHsgsMsFQlu7sucO4qCHIoxC5P25MAuQFc"
+# Aapka Naya Bot Token
+BOT_TOKEN = "8938665546:AAGvZElRJ36ji3LP7qyG4W90vC2ZFIQRKJY"
 OWNER_ID = 7364435907
 
 # Helper: Check Admin Rights
@@ -33,25 +34,40 @@ async def is_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
 # Fee Calculation Helper
 def get_fee_breakdown(amount: float):
     # Slab Rules:
-    # 1 to 190 -> Rs 10
-    # 191 to 599 -> Rs 20
-    # 600 to 2000 -> 3.5%
-    # 2001 to 3000 -> 3%
+    # 1 se 190 -> 10
+    # 191 se 599 -> 20
+    # 600 se 2000 -> 3.5%
+    # 2001 se 3000 -> 3%
     # > 3000 -> 3%
     if amount <= 190:
         fee = 10.0
         rate = "Flat ₹10"
+        fee_display = "Rs 10"
     elif amount <= 599:
         fee = 20.0
         rate = "Flat ₹20"
+        fee_display = "Rs 20"
     elif amount <= 2000:
         fee = round((amount * 0.035), 2)
         rate = "3.5%"
+        fee_display = f"3.5% - {fee:,.0f}₹"
     else:
         fee = round((amount * 0.03), 2)
         rate = "3%"
+        fee_display = f"3% - {fee:,.0f}₹"
     seller_receives = amount - fee
-    return fee, rate, seller_receives
+    return fee, rate, fee_display, seller_receives
+
+# Parse Amount string (e.g. 29k -> 29000, 500 -> 500)
+def parse_amount(val_str: str) -> float:
+    cleaned = val_str.lower().replace("₹", "").replace(",", "").strip()
+    match = re.search(r"(\d+(\.\d+)?)(\s*k)?", cleaned)
+    if not match:
+        return 0.0
+    num = float(match.group(1))
+    if match.group(3):
+        num *= 1000
+    return num
 
 # 1. Blank Form + Fee Structure Command (/form)
 async def form(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -86,18 +102,12 @@ async def calculate_fee(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    try:
-        raw_val = context.args[0].lower().replace("k", "000").replace("₹", "").replace(",", "")
-        amount = float(raw_val)
-    except ValueError:
-        await update.message.reply_text("❌ Kripya sahi number amount daalein (e.g. <code>/fee 1500</code>)!", parse_mode="HTML")
-        return
-
+    amount = parse_amount(context.args[0])
     if amount <= 0:
-        await update.message.reply_text("❌ Amount 0 se zyada hona chahiye.")
+        await update.message.reply_text("❌ Kripya sahi number amount daalein (e.g. <code>/fee 1500</code> ya <code>/fee 29k</code>)!", parse_mode="HTML")
         return
 
-    fee, fee_rate, seller_receives = get_fee_breakdown(amount)
+    fee, fee_rate, fee_display, seller_receives = get_fee_breakdown(amount)
 
     fee_text = (
         f"📊 <b>@CHIKUESCROWSERVICE FEE CALCULATOR</b>\n"
@@ -111,7 +121,7 @@ async def calculate_fee(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(fee_text, parse_mode="HTML")
 
-# 3. Deal Active Verification via Form Reply (/deal)
+# 3. Form Reply par Transaction Slip Generate karna (/deal)
 async def start_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update, context):
         await update.message.reply_text("❌ Sirf escrow admin yeh command chala sakta hai.")
@@ -131,42 +141,56 @@ async def start_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
         match = re.search(pattern, text, re.IGNORECASE)
         return match.group(1).strip() if match else "N/A"
 
-    seller = extract_val(r"SELLER\s*:\s*(.+)")
-    buyer = extract_val(r"BUYER\s*:\s*(.+)")
+    seller_raw = extract_val(r"SELLER\s*:\s*(.+)")
+    buyer_raw = extract_val(r"BUYER\s*:\s*(.+)")
     details = extract_val(r"DEAL\s*DEATAILS\s*:\s*(.+)|DEAL\s*DETAILS\s*:\s*(.+)")
-    amount_str = extract_val(r"DEAL\s*AMOUNT\s*:\s*(.+)")
+    amount_raw = extract_val(r"DEAL\s*AMOUNT\s*:\s*(.+)")
     escrow_till = extract_val(r"ESCROW\s*TILL\s*:\s*(.+)")
 
-    # Amount se automatically number nikal kar fee calculate karna
-    clean_num = re.sub(r"[^\d.]", "", amount_str.lower().replace("k", "000"))
-    fee_section = ""
-    try:
-        if clean_num:
-            amount_val = float(clean_num)
-            fee, rate, payout = get_fee_breakdown(amount_val)
-            fee_section = (
-                f"• <b>ᴇꜱᴄʀᴏᴡ ꜰᴇᴇ :</b> ₹{fee:,.0f} ({rate})\n"
-                f"• <b>ꜱᴇʟʟᴇʀ ᴘᴀʏᴏᴜᴛ :</b> ₹{payout:,.0f}\n"
-            )
-    except Exception:
-        fee_section = ""
+    # Agar form mein Telegram entities/mentions hain toh user ID extract karna
+    def format_user_with_id(user_str):
+        # Agar user_str me already bracket me id hai to waisi hi rakhna
+        if "(" in user_str and ")" in user_str:
+            return user_str
+        
+        # Message entities se match karna
+        clean_user = user_str.strip().lstrip("@")
+        if replied_msg.entities:
+            for entity in replied_msg.entities:
+                if entity.type == "text_mention" and entity.user:
+                    if entity.user.username and entity.user.username.lower() == clean_user.lower():
+                        return f"@{entity.user.username} ({entity.user.id})"
+                    elif entity.user.first_name and clean_user.lower() in entity.user.first_name.lower():
+                        return f"{entity.user.mention_html()} ({entity.user.id})"
+        return user_str
+
+    seller_formatted = format_user_with_id(seller_raw)
+    buyer_formatted = format_user_with_id(buyer_raw)
+
+    # Fee calculate karna
+    amount_num = parse_amount(amount_raw)
+    if amount_num > 0:
+        _, _, fee_display, _ = get_fee_breakdown(amount_num)
+        fee_line = f"\nFees {fee_display}"
+    else:
+        fee_line = ""
 
     deal_id = f"DL-CHIKU-{random.randint(1000, 9999)}"
     escrower_user = update.effective_user
-    escrower_name = escrower_user.mention_html()
+    escrower_mention = escrower_user.mention_html()
     escrower_id = escrower_user.id
 
+    # Aapka exact format
     formatted_slip = (
         f"<b>TRANSACTION</b>\n"
         f"🪪 <b>DEAL ID:</b> {deal_id}\n\n"
-        f"• <b>ꜱᴇʟʟᴇʀ :</b> {seller}\n"
-        f"• <b>ʙᴜʏᴇʀ :</b> {buyer}\n"
-        f"• <b>ᴅᴇᴀʟ ᴅᴇᴀᴛᴀɪʟꜱ :</b> {details}\n"
-        f"• <b>ᴅᴇᴀʟ ᴀᴍᴏᴜɴᴛ :</b> {amount_str}\n"
-        f"{fee_section}"
+        f"• <b>ꜱᴇʟʟᴇʀ :</b> {seller_formatted}\n\n"
+        f"• <b>ʙᴜʏᴇʀ  :</b> {buyer_formatted}\n\n"
+        f"• <b>ᴅᴇᴀʟ ᴅᴇᴀᴛᴀɪʟꜱ :</b> {details}\n\n"
+        f"• <b>ᴅᴇᴀʟ ᴀᴍᴏᴜɴᴛ :</b> {amount_raw}\n\n"
         f"• <b>ᴇꜱᴄʀᴏᴡ ᴛɪʟʟ :</b> {escrow_till}\n\n"
-        f"<b>Escrower :</b> {escrower_name} (<code>{escrower_id}</code>)\n\n"
-        f"⚠️ <b>ESCROW FEES IS NON - REFUNDABLE NO MATTER IF THE DEAL GETS CANCELLED</b> ⚠️"
+        f"<b>Escrower :</b> {escrower_mention} ({escrower_id})\n"
+        f"{fee_line}"
     )
 
     sent_msg = await context.bot.send_message(
