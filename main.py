@@ -17,6 +17,7 @@ def run_web():
     port = int(os.environ.get("PORT", 10000))
     web_app.run(host='0.0.0.0', port=port)
 
+# Bot Configuration
 BOT_TOKEN = "8938665546:AAGvZElRJ36ji3LP7qyG4W90vC2ZFIQRKJY"
 OWNER_ID = 7364435907
 
@@ -34,7 +35,6 @@ async def is_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
 # Normalize fancy unicode fonts to plain text
 def normalize_text(text: str) -> str:
     text = unicodedata.normalize('NFKD', text)
-    # Map small caps to normal ascii
     small_caps = {
         'ꜱ': 's', 'ᴇ': 'e', 'ʟ': 'l', 'ʀ': 'r', 'ʙ': 'b', 'ᴜ': 'u',
         'ʏ': 'y', 'ᴅ': 'd', 'ᴀ': 'a', 'ᴛ': 't', 'ɪ': 'i', 'ᴏ': 'o', 'ᴡ': 'w'
@@ -98,7 +98,7 @@ async def form(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(form_text, parse_mode="HTML")
 
-# 2. Fee Calculator Command (/fee <amount>)
+# 2. Automatic Fee Calculator Command (/fee <amount>)
 async def calculate_fee(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text(
@@ -143,7 +143,6 @@ async def start_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     orig_text = replied_msg.text or replied_msg.caption
     norm_text = normalize_text(orig_text)
 
-    # Line-by-line smart extractor
     def extract_field(keywords):
         for line in norm_text.splitlines():
             clean_l = re.sub(r'^[•\-\*\s]+', '', line).strip()
@@ -162,7 +161,6 @@ async def start_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     amount_raw = extract_field(["deal amount", "amount"])
     escrow_till = extract_field(["escrow till", "till"])
 
-    # Fallback agar line separator me match na hua ho
     if seller_raw == "N/A":
         m = re.search(r"seller\s*[:\-]\s*([^\n\r]+)", norm_text, re.IGNORECASE)
         if m: seller_raw = m.group(1).strip()
@@ -179,7 +177,6 @@ async def start_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
         m = re.search(r"escrow\s*till\s*[:\-]\s*([^\n\r]+)", norm_text, re.IGNORECASE)
         if m: escrow_till = m.group(1).strip()
 
-    # User ID formatting
     def format_user_with_id(user_str):
         if "(" in user_str and ")" in user_str:
             return user_str
@@ -196,7 +193,6 @@ async def start_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     seller_formatted = format_user_with_id(seller_raw)
     buyer_formatted = format_user_with_id(buyer_raw)
 
-    # Fee calculate karna
     amount_num = parse_amount(amount_raw)
     if amount_num > 0:
         _, _, fee_display, _ = get_fee_breakdown(amount_num)
@@ -243,25 +239,37 @@ async def close_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if len(context.args) < 3:
         await update.message.reply_text(
-            "Format galat hai!\nAise likhein:\n`/close <amount> <buyer> <seller>`", 
+            "Format galat hai!\nAise likhein:\n`/close <amount> <buyer> <seller>`\nExample: `/close 4559 @sagar_in @Shanky_27`", 
             parse_mode="Markdown"
         )
         return
 
-    amount = context.args[0]
+    amount_num = parse_amount(context.args[0])
+    amount_formatted = f"{amount_num:,.2f}"
     buyer = context.args[1]
     seller = context.args[2]
-    escrow_by = update.effective_user.mention_html()
+    
+    # Escrower mention format
+    escrower_user = update.effective_user
+    if escrower_user.username:
+        escrower_tag = f"@{escrower_user.username}"
+    else:
+        escrower_tag = escrower_user.mention_html()
+
     trade_id = f"DL-CHIKU-{random.randint(1000, 9999)}"
 
+    # Screenshot ke identical design format
     message_text = (
-        f"<b>TRANSACTION !!</b>\n"
         f"✅ <b>Deal Completed</b>\n"
-        f"🪪 <b>Trade ID:</b> {trade_id}\n"
-        f"📤 <b>Released:</b> ₹{amount}\n"
-        f"👤 <b>Escrowed By:</b> {escrow_by}\n\n"
-        f"~ {buyer} and {seller} are requested to drop the vouch before leaving 👇\n\n"
-        f"<code>Vouch @CHIKUxTRANSACTIONBOT for ₹{amount} smooth escrow deal</code>"
+        f"🪪 <b>Trade ID:</b>\n"
+        f"{trade_id}\n"
+        f"📤 <b>Released:</b> ₹{amount_formatted}\n"
+        f"👤 <b>Escrowed By:</b>\n"
+        f"{escrower_tag}\n\n"
+        f"~ {buyer} and {seller}\n"
+        f"are requested to drop the\n"
+        f"vouch before leaving 👇🏻\n\n"
+        f"<code>Vouch @chikuescrowservice for ₹{amount_formatted} smooth escrow deal</code>"
     )
 
     sent_msg = await context.bot.send_message(
