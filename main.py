@@ -17,7 +17,6 @@ def run_web():
     port = int(os.environ.get("PORT", 10000))
     web_app.run(host='0.0.0.0', port=port)
 
-# Bot Configuration
 BOT_TOKEN = "8938665546:AAGvZElRJ36ji3LP7qyG4W90vC2ZFIQRKJY"
 OWNER_ID = 7364435907
 
@@ -32,16 +31,15 @@ async def is_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     except Exception:
         return False
 
-# Normalize fancy unicode / small-caps fonts to plain ascii
+# Normalize fancy unicode fonts to plain text
 def normalize_text(text: str) -> str:
     text = unicodedata.normalize('NFKD', text)
     small_caps = {
         'ꜱ': 's', 'ᴇ': 'e', 'ʟ': 'l', 'ʀ': 'r', 'ʙ': 'b', 'ᴜ': 'u',
-        'ʏ': 'y', 'ᴅ': 'd', 'ᴀ': 'a', 'ᴛ': 't', 'ɪ': 'i', 'ᴏ': 'o', 'ᴡ': 'w',
-        '•': '', ':': ':', '-': '-'
+        'ʏ': 'y', 'ᴅ': 'd', 'ᴀ': 'a', 'ᴛ': 't', 'ɪ': 'i', 'ᴏ': 'o', 'ᴡ': 'w'
     }
     for k, v in small_caps.items():
-        text = text.replace(k, v)
+        text = text.replace(k, v).replace(k.upper(), v)
     return text
 
 # Fee Calculation Helper
@@ -77,13 +75,13 @@ def parse_amount(val_str: str) -> float:
         num *= 1000
     return num
 
-# Robust Field Extractor from any Form or Deal Slip text
+# Universal Extractor
 def extract_fields(text: str):
     norm = normalize_text(text)
     fields = {"seller": "", "buyer": "", "details": "", "amount": "", "till": "SECURE"}
     for line in norm.splitlines():
-        line_clean = line.strip()
-        m = re.search(r"(seller|buyer|deal\s*details|deal\s*deatails|details|deal\s*amount|amount|escrow\s*till|till)\s*[:\-]\s*(.*)", line_clean, re.IGNORECASE)
+        clean_l = re.sub(r'^[•\-\*\s]+', '', line).strip()
+        m = re.match(r"^(seller|buyer|deal\s*details|deal\s*deatails|details|deal\s*amount|amount|escrow\s*till|till)\s*[:\-]\s*(.*)$", clean_l, re.IGNORECASE)
         if m:
             key = m.group(1).lower().replace(" ", "")
             val = m.group(2).strip()
@@ -103,14 +101,10 @@ def extract_fields(text: str):
 async def resolve_user_id(user_str: str, replied_msg, context: ContextTypes.DEFAULT_TYPE, chat_id: int):
     if not user_str or user_str == "N/A":
         return "N/A"
-    
-    # Agar ID already bracket me present ho
     if "(" in user_str and ")" in user_str:
         return user_str
-        
     clean_user = user_str.strip().replace("@", "")
 
-    # 1. Check direct entities from message
     if replied_msg and replied_msg.entities:
         for entity in replied_msg.entities:
             if entity.type == "text_mention" and entity.user:
@@ -128,13 +122,11 @@ async def resolve_user_id(user_str: str, replied_msg, context: ContextTypes.DEFA
                     except Exception:
                         pass
 
-    # 2. Check if the sender of the replied message is this user
     if replied_msg and replied_msg.from_user:
         u = replied_msg.from_user
         if u.username and u.username.lower() == clean_user.lower():
             return f"@{u.username} ({u.id})"
 
-    # 3. Direct chat member lookup
     try:
         m = await context.bot.get_chat_member(chat_id, f"@{clean_user}")
         if m and m.user:
@@ -258,7 +250,7 @@ async def start_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print(f"Pin error: {e}")
 
-# 4. Short-Cut /close Command (Automatic detect from replied deal slip)
+# 4. Short-Cut & Manual /close Command
 async def close_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update, context):
         await update.message.reply_text("❌ Sirf escrow admin yeh command chala sakta hai.")
@@ -268,24 +260,25 @@ async def close_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     buyer = ""
     seller = ""
 
-    # Short-Cut logic: Replied message ko deeply check karna
     replied_msg = update.message.reply_to_message
     if replied_msg and (replied_msg.text or replied_msg.caption):
-        text = replied_msg.text or replied_msg.caption
-        fields = extract_fields(text)
-        
-        if fields["buyer"]:
-            buyer = fields["buyer"].split()[0]
-        if fields["seller"]:
-            seller = fields["seller"].split()[0]
-        if fields["amount"]:
-            amount_str = fields["amount"]
+        raw = replied_msg.text or replied_msg.caption
+        norm = normalize_text(raw)
 
-        # Agar directly amount parse na hua ho, regex se number nikalna
-        if not amount_str:
-            amt_match = re.search(r"(?:amount|released)\s*[:\-]?\s*₹?\s*([\d,]+(?:\.\d+)?k?)", normalize_text(text), re.IGNORECASE)
-            if amt_match:
-                amount_str = amt_match.group(1)
+        # 1. User handles dhoondhna
+        seller_m = re.search(r"seller\s*[:\-]\s*(@?[A-Za-z0-9_]+)", norm, re.IGNORECASE)
+        buyer_m = re.search(r"buyer\s*[:\-]\s*(@?[A-Za-z0-9_]+)", norm, re.IGNORECASE)
+        if seller_m:
+            s_val = seller_m.group(1).strip()
+            seller = s_val if s_val.startswith("@") else f"@{s_val}"
+        if buyer_m:
+            b_val = buyer_m.group(1).strip()
+            buyer = b_val if b_val.startswith("@") else f"@{b_val}"
+
+        # 2. Amount nikalna
+        amt_m = re.search(r"(?:deal amount|amount)\s*[:\-]\s*([^\n\r]+)", norm, re.IGNORECASE)
+        if amt_m:
+            amount_str = amt_m.group(1).strip()
 
     # Manual arguments fallback
     if len(context.args) >= 1 and not amount_str:
@@ -299,19 +292,14 @@ async def close_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if amount_num <= 0 or not buyer or not seller:
         await update.message.reply_text(
             "⚠️ <b>Short-cut:</b> Bot ke <b>ESCROW DEAL</b> slip ka <b>Reply</b> karke <code>/close</code> likhein.\n"
-            "Ya manual likhein: <code>/close 4559 @buyer @seller</code>",
+            "Ya manual likhein: <code>/close 2000 @ash_trust @knownrich</code>",
             parse_mode="HTML"
         )
         return
 
     amount_formatted = f"{amount_num:,.2f}"
-    
     escrower_user = update.effective_user
-    if escrower_user.username:
-        escrower_tag = f"@{escrower_user.username}"
-    else:
-        escrower_tag = escrower_user.mention_html()
-
+    escrower_tag = f"@{escrower_user.username}" if escrower_user.username else escrower_user.mention_html()
     trade_id = f"DL-CHIKU-{random.randint(1000, 9999)}"
 
     message_text = (
@@ -341,7 +329,7 @@ async def close_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print(f"Pin error: {e}")
 
-# 5. Bina slash ke triggers (form, fee)
+# 5. Bina slash ke trigger
 async def handle_text_triggers(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
@@ -350,6 +338,8 @@ async def handle_text_triggers(update: Update, context: ContextTypes.DEFAULT_TYP
         await form(update, context)
     elif text in ["fees", "fee", ".fee", ".fees"]:
         await fee_command(update, context)
+    elif text in ["close", ".close"]:
+        await close_deal(update, context)
 
 if __name__ == '__main__':
     threading.Thread(target=run_web, daemon=True).start()
@@ -360,10 +350,8 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("fees", fee_command))
     app.add_handler(CommandHandler("deal", start_deal))
     app.add_handler(CommandHandler("close", close_deal))
-    
-    # Text trigger for plain 'form' or 'fees'
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_triggers))
     
     print("Bot chalu ho gaya hai...")
     app.run_polling()
-        
+    
