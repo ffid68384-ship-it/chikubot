@@ -17,7 +17,6 @@ def run_web():
     port = int(os.environ.get("PORT", 10000))
     web_app.run(host='0.0.0.0', port=port)
 
-# Bot Configuration
 BOT_TOKEN = "8938665546:AAGvZElRJ36ji3LP7qyG4W90vC2ZFIQRKJY"
 OWNER_ID = 7364435907
 
@@ -32,7 +31,7 @@ async def is_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     except Exception:
         return False
 
-# Normalize fancy unicode fonts to plain text for regex matching
+# Normalize unicode text
 def normalize_text(text: str) -> str:
     text = unicodedata.normalize('NFKD', text)
     small_caps = {
@@ -45,12 +44,6 @@ def normalize_text(text: str) -> str:
 
 # Fee Calculation Helper
 def get_fee_breakdown(amount: float):
-    # Tiered Slabs:
-    # 1 to 190 -> 10
-    # 191 to 599 -> 20
-    # 600 to 2000 -> 3.5%
-    # 2001 to 3000 -> 3%
-    # > 3000 -> 3%
     if amount <= 190:
         fee = 10.0
         rate = "Flat ₹10"
@@ -80,7 +73,68 @@ def parse_amount(val_str: str) -> float:
         num *= 1000
     return num
 
-# 1. Blank Form + Fee Structure Command (/form)
+# Robust Field Extractor from Form text
+def extract_fields(text: str):
+    norm = normalize_text(text)
+    fields = {"seller": "", "buyer": "", "details": "", "amount": "", "till": "SECURE"}
+    for line in norm.splitlines():
+        clean_l = re.sub(r'^[•\-\*\s]+', '', line).strip()
+        m = re.match(r"^(seller|buyer|deal\s*details|deal\s*deatails|details|deal\s*amount|amount|escrow\s*till|till)\s*[:\-]\s*(.*)$", clean_l, re.IGNORECASE)
+        if m:
+            key = m.group(1).lower().replace(" ", "")
+            val = m.group(2).strip()
+            # Khali bullet ya doosra field aane par ignore
+            val = re.sub(r'^[•\-\*]\s*[A-Z\s]+:.*$', '', val).strip()
+            if "seller" in key:
+                fields["seller"] = val
+            elif "buyer" in key:
+                fields["buyer"] = val
+            elif "detail" in key:
+                fields["details"] = val
+            elif "amount" in key:
+                fields["amount"] = val
+            elif "till" in key and val:
+                fields["till"] = val
+    return fields
+
+# Helper to format User with their Numeric ID
+async def resolve_user_id(user_str: str, replied_msg, context: ContextTypes.DEFAULT_TYPE, chat_id: int):
+    if not user_str or user_str == "N/A":
+        return "N/A"
+    if re.search(r"\(\d+\)", user_str):
+        return user_str
+
+    clean_user = user_str.strip().replace("@", "")
+
+    # 1. Message Entities (Direct mention)
+    if replied_msg and replied_msg.entities:
+        for entity in replied_msg.entities:
+            if entity.type == "text_mention" and entity.user:
+                if entity.user.username and entity.user.username.lower() == clean_user.lower():
+                    return f"@{entity.user.username} ({entity.user.id})"
+                elif entity.user.first_name and clean_user.lower() in entity.user.first_name.lower():
+                    return f"{entity.user.mention_html()} ({entity.user.id})"
+            elif entity.type == "mention":
+                mention_text = replied_msg.text[entity.offset:entity.offset+entity.length].lstrip("@")
+                if mention_text.lower() == clean_user.lower():
+                    try:
+                        member = await context.bot.get_chat_member(chat_id, f"@{mention_text}")
+                        if member and member.user:
+                            return f"@{mention_text} ({member.user.id})"
+                    except Exception:
+                        pass
+
+    # 2. Try fetching from group
+    try:
+        member = await context.bot.get_chat_member(chat_id, f"@{clean_user}")
+        if member and member.user:
+            return f"@{clean_user} ({member.user.id})"
+    except Exception:
+        pass
+
+    return f"@{clean_user}" if not user_str.startswith("@") else user_str
+
+# 1. Blank Form Command (/form)
 async def form(update: Update, context: ContextTypes.DEFAULT_TYPE):
     form_text = (
         "<b>ESCROW DEAL FORM</b>\n\n"
@@ -90,37 +144,35 @@ async def form(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• <b>DEAL AMOUNT :</b> \n"
         "• <b>ESCROW TILL :</b> SECURE\n"
         "• <b>FOR RELEASE SELLER UPI :</b> \n\n"
-        "━━━━━━━━━━━━━━━━━━━\n"
-        "<b>@CHIKUESCROWSERVICE CHARGES -</b>\n\n"
-        "• Under ₹190 - ₹10\n"
-        "• ₹191 To ₹599 - ₹20\n"
-        "• ₹600 To ₹2000 - 3.5%\n"
-        "• ₹2001 To ₹3000 - 3%\n"
-        "• Upper Than ₹3000 - 3%\n\n"
-        "📱 <b>RG :</b> @CHIKUNXT\n"
-        "━━━━━━━━━━━━━━━━━━━\n"
         "<i>FOR MORE PROOFS CHECK GROUP PIN MESSAGES..</i>\n\n"
         "⚠️ <b>ESCROW FEES IS NON-REFUNDABLE NO MATTER IF THE DEAL GETS CANCELLED</b> ⚠️"
     )
     await update.message.reply_text(form_text, parse_mode="HTML")
 
-# 2. Automatic Fee Calculator Command (/fee <amount>)
-async def calculate_fee(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# 2. Fee Calculator Command (/fee or /fees)
+async def fee_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text(
-            "⚠️ Kripya amount likhein!\nExample: <code>/fee 2000</code>",
-            parse_mode="HTML"
+        structure_text = (
+            "<b>@CHIKUESCROWSERVICE CHARGES -</b>\n\n"
+            "• Under ₹190 - ₹10\n"
+            "• ₹191 To ₹599 - ₹20\n"
+            "• ₹600 To ₹2000 - 3.5%\n"
+            "• ₹2001 To ₹3000 - 3%\n"
+            "• Upper Than ₹3000 - 3%\n\n"
+            "📱 <b>RG :</b> @CHIKUNXT\n"
+            "━━━━━━━━━━━━━━━━━━━\n"
+            "💡 <i>Tip: Amount check karne ke liye:</i> <code>/fee 2000</code>"
         )
+        await update.message.reply_text(structure_text, parse_mode="HTML")
         return
 
     amount = parse_amount(context.args[0])
     if amount <= 0:
-        await update.message.reply_text("❌ Kripya sahi number amount daalein (e.g. <code>/fee 1500</code> ya <code>/fee 29k</code>)!", parse_mode="HTML")
+        await update.message.reply_text("❌ Kripya sahi amount likhein (e.g. <code>/fee 1500</code> ya <code>/fee 29k</code>)!", parse_mode="HTML")
         return
 
     fee, fee_rate, fee_display, seller_receives = get_fee_breakdown(amount)
-
-    fee_text = (
+    calc_text = (
         f"📊 <b>@CHIKUESCROWSERVICE FEE CALCULATOR</b>\n"
         f"━━━━━━━━━━━━━━━━━━━\n"
         f"💰 <b>Deal Amount:</b> ₹{amount:,.0f}\n"
@@ -130,9 +182,9 @@ async def calculate_fee(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"✅ <b>Seller Receives:</b> ₹{seller_receives:,.0f}\n\n"
         f"📱 <b>RG :</b> @CHIKUNXT"
     )
-    await update.message.reply_text(fee_text, parse_mode="HTML")
+    await update.message.reply_text(calc_text, parse_mode="HTML")
 
-# 3. Form Reply par Active Deal Receipt Generate karna (/deal)
+# 3. Form Reply par ESCROW DEAL generate karke Pin karna (/deal)
 async def start_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update, context):
         await update.message.reply_text("❌ Sirf escrow admin yeh command chala sakta hai.")
@@ -147,85 +199,16 @@ async def start_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     orig_text = replied_msg.text or replied_msg.caption
-    norm_text = normalize_text(orig_text)
+    fields = extract_fields(orig_text)
 
-    def extract_field(keywords):
-        for line in norm_text.splitlines():
-            clean_l = re.sub(r'^[•\-\*\s]+', '', line).strip()
-            for kw in keywords:
-                pattern = rf"^{kw}\s*[:\-]\s*(.+)$"
-                m = re.match(pattern, clean_l, re.IGNORECASE)
-                if m:
-                    val = m.group(1).strip()
-                    if val:
-                        return val
-        return "N/A"
+    seller_raw = fields["seller"] or "N/A"
+    buyer_raw = fields["buyer"] or "N/A"
+    details = fields["details"] or "N/A"
+    amount_raw = fields["amount"] or "N/A"
+    escrow_till = fields["till"] or "SECURE"
 
-    seller_raw = extract_field(["seller", "sller"])
-    buyer_raw = extract_field(["buyer", "byer"])
-    details = extract_field(["deal details", "deal deatails", "details", "deatails"])
-    amount_raw = extract_field(["deal amount", "amount"])
-    escrow_till = extract_field(["escrow till", "till"])
-
-    if seller_raw == "N/A":
-        m = re.search(r"seller\s*[:\-]\s*([^\n\r]+)", norm_text, re.IGNORECASE)
-        if m: seller_raw = m.group(1).strip()
-    if buyer_raw == "N/A":
-        m = re.search(r"buyer\s*[:\-]\s*([^\n\r]+)", norm_text, re.IGNORECASE)
-        if m: buyer_raw = m.group(1).strip()
-    if details == "N/A":
-        m = re.search(r"deal\s*dea?tails\s*[:\-]\s*([^\n\r]+)", norm_text, re.IGNORECASE)
-        if m: details = m.group(1).strip()
-    if amount_raw == "N/A":
-        m = re.search(r"deal\s*amount\s*[:\-]\s*([^\n\r]+)", norm_text, re.IGNORECASE)
-        if m: amount_raw = m.group(1).strip()
-    if escrow_till == "N/A":
-        m = re.search(r"escrow\s*till\s*[:\-]\s*([^\n\r]+)", norm_text, re.IGNORECASE)
-        if m: escrow_till = m.group(1).strip()
-
-    # User ID Fetcher (Resolves User ID from entities, text, or group members)
-    async def format_user_with_id(user_str):
-        if not user_str or user_str == "N/A":
-            return "N/A"
-        # Agar already id likhi hai format me
-        id_match = re.search(r"\((\d+)\)", user_str)
-        if id_match:
-            return user_str
-        
-        # Username clean
-        clean_user = user_str.strip().replace("@", "")
-        
-        # 1. Check message entities (direct mentions in replied msg)
-        if replied_msg.entities:
-            for entity in replied_msg.entities:
-                if entity.type == "text_mention" and entity.user:
-                    if entity.user.username and entity.user.username.lower() == clean_user.lower():
-                        return f"@{entity.user.username} ({entity.user.id})"
-                    elif entity.user.first_name and clean_user.lower() in entity.user.first_name.lower():
-                        return f"{entity.user.mention_html()} ({entity.user.id})"
-                elif entity.type == "mention":
-                    # Mention by @username
-                    mention_text = orig_text[entity.offset:entity.offset+entity.length].lstrip("@")
-                    if mention_text.lower() == clean_user.lower():
-                        try:
-                            member = await context.bot.get_chat_member(update.effective_chat.id, f"@{mention_text}")
-                            if member and member.user:
-                                return f"@{mention_text} ({member.user.id})"
-                        except Exception:
-                            pass
-
-        # 2. Try fetching directly via get_chat_member
-        try:
-            member = await context.bot.get_chat_member(update.effective_chat.id, f"@{clean_user}")
-            if member and member.user:
-                return f"@{clean_user} ({member.user.id})"
-        except Exception:
-            pass
-
-        return user_str
-
-    seller_formatted = await format_user_with_id(seller_raw)
-    buyer_formatted = await format_user_with_id(buyer_raw)
+    seller_formatted = await resolve_user_id(seller_raw, replied_msg, context, update.effective_chat.id)
+    buyer_formatted = await resolve_user_id(buyer_raw, replied_msg, context, update.effective_chat.id)
 
     amount_num = parse_amount(amount_raw)
     if amount_num > 0:
@@ -239,7 +222,6 @@ async def start_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     escrower_mention = escrower_user.mention_html()
     escrower_id = escrower_user.id
 
-    # Exact format matching screenshot with premium emojis & spacing
     formatted_slip = (
         f"<b>ESCROW DEAL</b>\n"
         f"🪪 <b>DEAL ID:</b> {deal_id}\n\n"
@@ -266,23 +248,49 @@ async def start_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print(f"Pin error: {e}")
 
-# 4. Final Deal Complete Receipt (/close <amount> <buyer> <seller>)
+# 4. Short-Cut /close Command (Auto-detect from replied slip or manual)
 async def close_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(update, context):
         await update.message.reply_text("❌ Sirf escrow admin yeh command chala sakta hai.")
         return
 
-    if len(context.args) < 3:
+    amount_str = ""
+    buyer = ""
+    seller = ""
+
+    # Short-Cut logic: Check replied message
+    replied_msg = update.message.reply_to_message
+    if replied_msg and (replied_msg.text or replied_msg.caption):
+        text = replied_msg.text or replied_msg.caption
+        fields = extract_fields(text)
+        
+        # Extract buyer & seller handles
+        if fields["buyer"]:
+            buyer = fields["buyer"].split()[0]
+        if fields["seller"]:
+            seller = fields["seller"].split()[0]
+        if fields["amount"]:
+            amount_str = fields["amount"]
+
+    # Manual args override if provided
+    if len(context.args) >= 1 and not amount_str:
+        amount_str = context.args[0]
+    if len(context.args) >= 2 and not buyer:
+        buyer = context.args[1]
+    if len(context.args) >= 3 and not seller:
+        seller = context.args[2]
+
+    # Validate extracted data
+    amount_num = parse_amount(amount_str)
+    if amount_num <= 0 or not buyer or not seller:
         await update.message.reply_text(
-            "Format galat hai!\nAise likhein:\n`/close <amount> <buyer> <seller>`\nExample: `/close 4559 @sagar_in @Shanky_27`", 
-            parse_mode="Markdown"
+            "⚠️ <b>Short-cut:</b> Deal slip ka <b>Reply</b> karke <code>/close</code> likhein.\n"
+            "Ya manual likhein: <code>/close &lt;amount&gt; &lt;buyer&gt; &lt;seller&gt;</code>",
+            parse_mode="HTML"
         )
         return
 
-    amount_num = parse_amount(context.args[0])
     amount_formatted = f"{amount_num:,.2f}"
-    buyer = context.args[1]
-    seller = context.args[2]
     
     escrower_user = update.effective_user
     if escrower_user.username:
@@ -324,7 +332,8 @@ if __name__ == '__main__':
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     
     app.add_handler(CommandHandler("form", form))
-    app.add_handler(CommandHandler("fee", calculate_fee))
+    app.add_handler(CommandHandler("fee", fee_command))
+    app.add_handler(CommandHandler("fees", fee_command))
     app.add_handler(CommandHandler("deal", start_deal))
     app.add_handler(CommandHandler("close", close_deal))
     
