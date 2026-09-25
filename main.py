@@ -157,7 +157,6 @@ async def start_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
         fee_num, _, dsp, _ = get_fee(amt_num)
         fee_line = f"\n\nFees {dsp}"
     
-    # 01, 02, 03 serial format
     did = f"DL-CHIKU-{DEAL_COUNTER:02d}"
     DEAL_COUNTER += 1
 
@@ -404,19 +403,10 @@ async def handle_txt(u: Update, c: ContextTypes.DEFAULT_TYPE):
     t = u.message.text.strip()
     tl = t.lower()
     
+    # Bina slash ke sirf form, fees aur adminhold chalenge
     if tl in ["form", ".form"]: await form(u, c); return
     elif tl in ["fees", "fee", ".fee", ".fees"]: await fee_command(u, c); return
-    elif tl in ["close", ".close"]: await close_deal(u, c); return
     elif tl in ["adminhold", ".adminhold"]: await admin_hold_cmd(u, c); return
-    elif tl.startswith("hold") or tl.startswith(".hold"):
-        c.args = [] if tl in ["hold", ".hold"] else t.split()[1:]
-        await hold_deal(u, c); return
-    elif tl.startswith("cancel") or tl.startswith(".cancel"):
-        c.args = t.split()[1:]
-        await cancel_deal(u, c); return
-    elif tl.startswith("refund") or tl.startswith(".refund"):
-        c.args = t.split()[1:]
-        await refund_deal(u, c); return
 
     fee_match = re.match(r"^(?:fee|fees|\.fee|\.fees|\/fee|\/fees)\s+([^\s]+)", tl)
     if fee_match:
