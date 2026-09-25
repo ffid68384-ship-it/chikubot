@@ -154,10 +154,12 @@ async def cmd_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     msg = f"<b>ESCROW DEAL</b>\n🪪 <b>DEAL ID:</b> {did}\n\n• <b>ꜱᴇʟʟᴇʀ :</b> {seller}\n• <b>ʙᴜʏᴇʀ  :</b> {buyer}\n\n• <b>ᴅᴇᴀʟ ᴅᴇᴀᴛᴀɪʟꜱ :</b> {dtl}\n• <b>ᴅᴇᴀʟ ᴀᴍᴏᴜɴᴛ :</b> {amt_lbl}\n• <b>ᴇꜱᴄʀᴏᴡ ᴛɪʟʟ :</b> {till}\n\n<b>Escrower :</b> {eu.mention_html()} ({eu.id}){fee_line}"
     sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=msg, parse_mode="HTML")
     try:
-        pin_msg = await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
+        await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
         LAST_PIN = sm.message_id
-        if pin_msg:
-            await c.bot.delete_message(chat_id=u.effective_chat.id, message_id=pin_msg.message_id)
+        async for message in c.bot.get_chat_history(u.effective_chat.id, limit=3):
+            if message.pinned_message and message.pinned_message.message_id == sm.message_id:
+                await message.delete()
+                break
     except: pass
     DEALS_DB[did] = {"status": "ACTIVE", "seller": seller, "buyer": buyer, "amount": amt, "escrower": (f"@{eu.username}" if eu.username else eu.first_name), "details": dtl, "msg_id": sm.message_id}
 
@@ -224,10 +226,12 @@ async def cmd_close(u: Update, c: ContextTypes.DEFAULT_TYPE):
     txt = f"✅ <b>Deal Completed</b>\n🪪 <b>Trade ID:</b>\n{did}\n📤 <b>Released:</b> {amt_lbl}\n👤 <b>Escrowed By:</b>\n{esc_by}\n\n~ {b_tag} and {s_tag}\nare requested to drop the\nvouch before leaving 👇🏻\n\n<code>Vouch @chikuescrowservice for {amt_lbl} smooth escrow deal</code>"
     sm = await c.bot.send_message(chat_id=cid, text=txt, parse_mode="HTML")
     try:
-        pin_msg = await c.bot.pin_chat_message(chat_id=cid, message_id=sm.message_id, disable_notification=True)
+        await c.bot.pin_chat_message(chat_id=cid, message_id=sm.message_id, disable_notification=True)
         LAST_PIN = sm.message_id
-        if pin_msg:
-            await c.bot.delete_message(chat_id=cid, message_id=pin_msg.message_id)
+        async for message in c.bot.get_chat_history(cid, limit=3):
+            if message.pinned_message and message.pinned_message.message_id == sm.message_id:
+                await message.delete()
+                break
     except: pass
 
 async def cmd_cancel(u: Update, c: ContextTypes.DEFAULT_TYPE):
@@ -241,10 +245,12 @@ async def cmd_cancel(u: Update, c: ContextTypes.DEFAULT_TYPE):
         except: pass
     sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=f"❌ <b>DEAL CANCELLED</b>\n🪪 <b>ID:</b> {did}\n👤 <b>By:</b> {u.effective_user.mention_html()}", parse_mode="HTML")
     try:
-        pin_msg = await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
+        await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
         LAST_PIN = sm.message_id
-        if pin_msg:
-            await c.bot.delete_message(chat_id=u.effective_chat.id, message_id=pin_msg.message_id)
+        async for message in c.bot.get_chat_history(u.effective_chat.id, limit=3):
+            if message.pinned_message and message.pinned_message.message_id == sm.message_id:
+                await message.delete()
+                break
     except: pass
 
 async def cmd_refund(u: Update, c: ContextTypes.DEFAULT_TYPE):
@@ -276,10 +282,12 @@ async def cmd_refund(u: Update, c: ContextTypes.DEFAULT_TYPE):
     txt = f"🔄 <b>DEAL REFUNDED</b>\n━━━━━━━━━━━━━━━━━━━\n🪪 <b>Trade ID:</b> {did}\n💵 <b>Refunded Amount:</b> {amt_lbl}\n👤 <b>Refunded To:</b> {b_tag}\n👤 <b>Admin:</b> {u.effective_user.mention_html()}\n\n🔒 <i>Deal amount has been safely refunded back to buyer.</i>"
     sm = await c.bot.send_message(chat_id=cid, text=txt, parse_mode="HTML")
     try:
-        pin_msg = await c.bot.pin_chat_message(chat_id=cid, message_id=sm.message_id, disable_notification=True)
+        await c.bot.pin_chat_message(chat_id=cid, message_id=sm.message_id, disable_notification=True)
         LAST_PIN = sm.message_id
-        if pin_msg:
-            await c.bot.delete_message(chat_id=cid, message_id=pin_msg.message_id)
+        async for message in c.bot.get_chat_history(cid, limit=3):
+            if message.pinned_message and message.pinned_message.message_id == sm.message_id:
+                await message.delete()
+                break
     except: pass
 
 async def cmd_hold(u: Update, c: ContextTypes.DEFAULT_TYPE):
@@ -294,10 +302,12 @@ async def cmd_hold(u: Update, c: ContextTypes.DEFAULT_TYPE):
         except: pass
     sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=f"⏳ <b>DEAL ON HOLD</b>\n━━━━━━━━━━━━━━━━━━━\n🪪 <b>Deal ID:</b> {did}\n⚠️ <b>Reason:</b> {rsn}\n👤 <b>Action By:</b> {u.effective_user.mention_html()}\n\n🔒 <i>Release is paused.</i>", parse_mode="HTML")
     try:
-        pin_msg = await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
+        await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
         LAST_PIN = sm.message_id
-        if pin_msg:
-            await c.bot.delete_message(chat_id=u.effective_chat.id, message_id=pin_msg.message_id)
+        async for message in c.bot.get_chat_history(u.effective_chat.id, limit=3):
+            if message.pinned_message and message.pinned_message.message_id == sm.message_id:
+                await message.delete()
+                break
     except: pass
 
 async def cmd_adminhold(u: Update, c: ContextTypes.DEFAULT_TYPE):
@@ -366,12 +376,4 @@ def main():
     app.add_handler(CommandHandler("cancel", cmd_cancel))
     app.add_handler(CommandHandler("refund", cmd_refund))
     app.add_handler(CommandHandler("hold", cmd_hold))
-    app.add_handler(CommandHandler("adminhold", cmd_adminhold))
-    app.add_handler(CommandHandler("stats", cmd_stats))
-    app.add_handler(MessageHandler(filters.UpdateType.EDITED_MESSAGE, check_edit))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_router))
-    app.run_polling(drop_pending_updates=True)
-
-if __name__ == '__main__':
-    main()
-    
+    app.add_handler(CommandHandler("adminhold", cmd_adminh
