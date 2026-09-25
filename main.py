@@ -43,7 +43,7 @@ def parse_amt(val):
 
 def extract_f(raw):
     n = norm_txt(raw)
-    f = {"seller": "", "buyer": "", "details": "", "amount": "", "till": "SECURE", "deal_id": ""}
+    f = {"seller": "", "buyer": "", "details": "", "amount": "", "till": "", "deal_id": ""}
     dm = re.search(r"DL[-_ ]*CHIKU[-_ ]*\d+", n, re.I)
     if dm: f["deal_id"] = re.sub(r"\s+", "", dm.group(0).upper().replace("_", "-"))
     for k, p in [("seller", r"seller\s*[:\-]\s*([^\n\r]+)"), ("buyer", r"buyer\s*[:\-]\s*([^\n\r]+)"), ("amount", r"(?:deal\s*amount|amount|released)\s*[:\-]\s*([^\n\r]+)"), ("details", r"(?:deal\s*details|deal\s*deatails|details)\s*[:\-]\s*([^\n\r]+)"), ("till", r"(?:escrow\s*till|till)\s*[:\-]\s*([^\n\r]+)")]:
@@ -93,7 +93,19 @@ async def send_fee_result(u: Update, amt: float):
     await u.message.reply_text(f"📊 <b>@CHIKUESCROWSERVICE FEE CALCULATOR</b>\n━━━━━━━━━━━━━━━━━━━\n💰 <b>Deal Amount:</b> ₹{amt:,.0f}\n⚡ <b>Fee Rate:</b> {r}\n💵 <b>Escrow Fee:</b> ₹{f:,.0f}\n━━━━━━━━━━━━━━━━━━━\n✅ <b>Seller Receives:</b> ₹{rcv:,.0f}\n\n📱 <b>RG :</b> @CHIKUNXT", parse_mode="HTML")
 
 async def form(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    await u.message.reply_text("<b>ESCROW DEAL FORM</b>\n\n• <b>SELLER :</b> \n• <b>BUYER :</b> \n• <b>DEAL DETAILS :</b> \n• <b>DEAL AMOUNT :</b> \n• <b>ESCROW TILL :</b> SECURE\n• <b>FOR RELEASE SELLER UPI :</b> \n\n<i>FOR MORE PROOFS CHECK GROUP PIN MESSAGES..</i>\n\n⚠️ <b>ESCROW FEES IS NON-REFUNDABLE NO MATTER IF THE DEAL GETS CANCELLED</b> ⚠️", parse_mode="HTML")
+    msg = (
+        "📋 <b>𝗘𝗦𝗖𝗥𝗢𝗪 𝗗𝗘𝗔𝗟 𝗙𝗢𝗥𝗠</b>\n\n"
+        "• <b>𝗦𝗘𝗟𝗟𝗘𝗥 :</b> \n\n"
+        "• <b>𝗕𝗨𝗬𝗘𝗥 :</b> \n\n"
+        "• <b>𝗗𝗘𝗔𝗟 𝗗𝗘𝗧𝗔𝗜𝗟𝗦 :</b> \n\n"
+        "• <b>𝗗𝗘𝗔𝗟 𝗔𝗠𝗢𝗨𝗡𝗧 :</b> \n\n"
+        "• <b>𝗘𝗦𝗖𝗥𝗢𝗪 𝗧𝗜𝗟𝗟 :</b> \n\n"
+        "• <b>𝗙𝗢𝗥 𝗥𝗘𝗟𝗘𝗔𝗦𝗘 𝗦𝗘𝗟𝗟𝗘𝗥 𝗨𝗣𝗜 :</b> \n"
+        "__________________________________\n\n"
+        "<i>𝗙𝗢𝗥 𝗠𝗢𝗥𝗘 𝗣𝗥𝗢𝗢𝗙𝗦 𝗖𝗛𝗘𝗖𝗞 𝗚𝗥𝗢𝗨𝗣 𝗣𝗜𝗡 𝗠𝗘𝗦𝗦𝗔𝗚𝗘𝗦..</i>\n\n"
+        "⚠️ <b>𝗘𝗦𝗖𝗥𝗢𝗪 𝗙𝗘𝗘𝗦 𝗜𝗦 𝗡𝗢𝗡-𝗥𝗘𝗙𝗨𝗡𝗗𝗔𝗕𝗟𝗘 𝗡𝗢 𝗠𝗔𝗧𝗧𝗘𝗥 𝗜𝗙 𝗧𝗛𝗘 𝗗𝗘𝗔𝗟 𝗚𝗘𝗧𝗦 𝗖𝗔𝗡𝗖𝗘𝗟𝗟𝗘𝗗</b> ⚠️"
+    )
+    await u.message.reply_text(msg, parse_mode="HTML")
 
 async def fee_command(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not c.args:
@@ -122,7 +134,8 @@ async def start_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     eu = u.effective_user
     etag = f"@{eu.username}" if eu.username else eu.first_name
     amt_display = f"₹{amt_num:,.0f}" if amt_num > 0 else (f['amount'] or 'N/A')
-    slip = f"<b>ESCROW DEAL</b>\n🪪 <b>DEAL ID:</b> {did}\n\n• <b>ꜱᴇʟʟᴇʀ :</b> {s_fmt}\n• <b>ʙᴜʏᴇʀ  :</b> {b_fmt}\n\n• <b>ᴅᴇᴀʟ ᴅᴇᴀᴛᴀɪʟꜱ :</b> {f['details'] or 'N/A'}\n• <b>ᴅᴇᴀʟ ᴀᴍᴏᴜɴᴛ :</b> {amt_display}\n• <b>ᴇꜱᴄʀᴏᴡ ᴛɪʟʟ :</b> {f['till']}\n\n<b>Escrower :</b> {eu.mention_html()} ({eu.id}){fee_line}"
+    till_condition = f['till'] if f['till'] else "SECURE"
+    slip = f"<b>ESCROW DEAL</b>\n🪪 <b>DEAL ID:</b> {did}\n\n• <b>ꜱᴇʟʟᴇʀ :</b> {s_fmt}\n• <b>ʙᴜʏᴇʀ  :</b> {b_fmt}\n\n• <b>ᴅᴇᴀʟ ᴅᴇᴀᴛᴀɪʟꜱ :</b> {f['details'] or 'N/A'}\n• <b>ᴅᴇᴀʟ ᴀᴍᴏᴜɴᴛ :</b> {amt_display}\n• <b>ᴇꜱᴄʀᴏᴡ ᴛɪʟʟ :</b> {till_condition}\n\n<b>Escrower :</b> {eu.mention_html()} ({eu.id}){fee_line}"
     sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=slip, parse_mode="HTML")
     try:
         await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
@@ -336,8 +349,4 @@ if __name__ == '__main__':
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     cmds = [("form", form), ("fee", fee_command), ("fees", fee_command), ("deal", start_deal), ("close", close_deal), ("hold", hold_deal), ("cancel", cancel_deal), ("refund", refund_deal), ("status", status_deal), ("stats", stats_cmd), ("adminhold", admin_hold_cmd)]
     for cmd, fn in cmds: app.add_handler(CommandHandler(cmd, fn))
-    app.add_handler(MessageHandler(filters.StatusUpdate.PINNED_MESSAGE, purge_pinned_service_msg))
-    app.add_handler(MessageHandler(filters.UpdateType.EDITED_MESSAGE, handle_edited_msg))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_txt))
-    app.run_polling(drop_pending_updates=True)
-    
+    app.add_handler(MessageHandler(filters.StatusUpdate.PINNED_MESSAGE, purge_pinned_service
