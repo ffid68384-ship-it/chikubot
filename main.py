@@ -28,17 +28,17 @@ async def is_admin(u: Update, c: ContextTypes.DEFAULT_TYPE):
 def clean_txt(t):
     if not t:
         return ""
-    conv = {
+    mapping = {
         'ꜱ':'s','s':'s','ᴇ':'e','e':'e','ʟ':'l','l':'l','ʀ':'r','r':'r',
         'ʙ':'b','b':'b','ᴜ':'u','u':'u','ʏ':'y','y':'y','ᴅ':'d','d':'d',
         'ᴀ':'a','a':'a','ᴛ':'t','t':'t','ɪ':'i','i':'i','ᴏ':'o','o':'o',
         'ᴡ':'w','w':'w','м':'m','m':'m','ɴ':'n','n':'n','ᴄ':'c','c':'c',
-        'ʜ':'h','h':'h','ᴋ':'k','k':'k','ᴘ':'p','p':'p','ғ':'f','f':'f'
+        'ʜ':'h','h':'h','ᴋ':'k','k':'k','ᴘ':'p','p':'p','ғ':'f','f':'f',
+        '𝖴':'u','U':'u','O':'o','О':'o'
     }
-    res = []
-    for ch in unicodedata.normalize('NFKD', str(t)):
-        res.append(conv.get(ch, ch))
-    return "".join(res)
+    t_norm = unicodedata.normalize('NFKD', str(t))
+    res = "".join(mapping.get(ch, ch) for ch in t_norm)
+    return res.lower()
 
 def calc_fee(amt):
     if amt <= 0:
@@ -65,37 +65,40 @@ def get_amt(val):
 def parse_form(raw):
     data = {"seller": "", "buyer": "", "details": "", "amount": "", "till": "", "id": ""}
     norm_full = clean_txt(raw)
-    
-    dm = re.search(r"DL[-_ ]*CHIKU[-_ ]*\d+", norm_full, re.I)
+
+    dm = re.search(r"dl[-_ ]*chiku[-_ ]*\d+", norm_full)
     if dm:
         data["id"] = re.sub(r"\s+", "", dm.group(0).upper().replace("_", "-"))
 
     lines = raw.split("\n")
     for line in lines:
-        cleaned_line = clean_txt(line).strip().lower()
-        if not cleaned_line:
+        c_line = clean_txt(line).strip()
+        if not c_line:
             continue
-        
+
         parts = re.split(r"[:\-]", line, 1)
         val = parts[1].strip() if len(parts) > 1 else ""
 
-        if "seller" in cleaned_line and not data["seller"]:
+        if "seller" in c_line and not data["seller"]:
             data["seller"] = val
-        elif "buyer" in cleaned_line and not data["buyer"]:
+        elif "buyer" in c_line and not data["buyer"]:
             data["buyer"] = val
-        elif any(k in cleaned_line for k in ["details", "deatails", "detail"]) and not data["details"]:
+        elif any(k in c_line for k in ["details", "deatails", "detail"]) and not data["details"]:
             data["details"] = val
-        elif any(k in cleaned_line for k in ["amount", "amt", "price"]) and not data["amount"]:
-            # Pehle colon ke baad se uthao, agar khali ho toh cleaned_line se
+        elif any(k in c_line for k in ["amont", "amount", "amunt", "amt", "price"]) and not data["amount"]:
             data["amount"] = val if val else line.strip()
-        elif "till" in cleaned_line and not data["till"]:
+        elif "till" in c_line and not data["till"]:
             data["till"] = val
 
-    # Fallback: Agar regex miss hua toh pure text se 'amount' dhundo
-    if not data["amount"] or data["amount"] == "N/A":
-        amt_match = re.search(r"(?:amount|amt)[\s\:\-]+([^\n\r]+)", norm_full, re.I)
-        if amt_match:
-            data["amount"] = amt_match.group(1).strip()
+    # Direct fallback: Agar amount abhi bhi khali ho toh pure text me se ₹ ya amount line extract karo
+    if not data["amount"] or data["amount"].upper() == "N/A":
+        m_amt = re.search(r"(?:amount|amunt|amont|amt)[\s\:\-]+([^\n\r]+)", norm_full)
+        if m_amt:
+            data["amount"] = m_amt.group(1).strip()
+        else:
+            m_rs = re.search(r"[₹rs]\s*(\d+)", raw, re.I)
+            if m_rs:
+                data["amount"] = m_rs.group(1).strip()
 
     return data
 
@@ -182,11 +185,12 @@ async def cmd_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await c.bot.unpin_chat_message(chat_id=u.effective_chat.id, message_id=rep.message_id)
     except:
         pass
-    
-    f = parse_form(rep.text or rep.caption)
+
+    raw_text = rep.text or rep.caption
+    f = parse_form(raw_text)
     seller = await resolve_user(f["seller"] or "N/A", rep, c, u.effective_chat.id)
     buyer = await resolve_user(f["buyer"] or "N/A", rep, c, u.effective_chat.id)
-    
+
     amt = get_amt(f["amount"])
     fee_val, _, fee_tag, _ = calc_fee(amt)
     fee_line = f"\n\nFees {fee_tag}" if amt > 0 else ""
@@ -194,15 +198,8 @@ async def cmd_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     DEAL_CTR += 1
     CURR_DEAL = did
     eu = u.effective_user
-    
-    # Amount formatting fix
-    if amt > 0:
-        amt_lbl = f"₹{amt:,.0f}"
-    elif f['amount']:
-        amt_lbl = f['amount']
-    else:
-        amt_lbl = 'N/A'
-        
+
+    amt_lbl = f"₹{amt:,.0f}" if amt > 0 else (f['amount'] if f['amount'] else 'N/A')
     dtl = f['details'] if f['details'] else 'N/A'
     till = f['till'] if f['till'] else 'SECURE'
 
@@ -359,4 +356,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-    
+                    
