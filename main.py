@@ -18,6 +18,7 @@ DEALS_DB = {}
 STATS = {"total_deals": 0, "total_volume": 0.0, "total_fees": 0.0}
 DEAL_COUNTER = 1
 LATEST_ACTIVE_DEAL = None
+LATEST_PINNED_MSG_ID = None
 
 async def is_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
@@ -113,6 +114,15 @@ async def safe_delete_cmd(update: Update):
     except Exception:
         pass
 
+async def unpin_target_msg(c: ContextTypes.DEFAULT_TYPE, chat_id, rep_msg_id=None):
+    global LATEST_PINNED_MSG_ID
+    target = rep_msg_id or LATEST_PINNED_MSG_ID
+    if target:
+        try:
+            await c.bot.unpin_chat_message(chat_id=chat_id, message_id=target)
+        except Exception:
+            pass
+
 async def send_fee_result(update: Update, amt: float):
     fee, rate, dsp, rcv = get_fee(amt)
     await update.message.reply_text(
@@ -148,7 +158,7 @@ async def fee_command(u: Update, c: ContextTypes.DEFAULT_TYPE):
     await send_fee_result(u, amt)
 
 async def start_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    global DEAL_COUNTER, LATEST_ACTIVE_DEAL
+    global DEAL_COUNTER, LATEST_ACTIVE_DEAL, LATEST_PINNED_MSG_ID
     if not await is_admin(u, c):
         await u.message.reply_text("❌ Sirf escrow admin yeh command chala sakta hai.")
         return
@@ -156,6 +166,12 @@ async def start_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not rep or not (rep.text or rep.caption):
         await u.message.reply_text("⚠️ Bhare hue <b>FORM</b> ka <b>Reply</b> karke <code>/deal</code> likhein!", parse_mode="HTML")
         return
+    
+    # Agar purana form pinned tha toh usko unpin kar do
+    try:
+        await c.bot.unpin_chat_message(chat_id=u.effective_chat.id, message_id=rep.message_id)
+    except: pass
+
     f = extract_f(rep.text or rep.caption)
     s_fmt = await res_uid(f["seller"] or "N/A", rep, c, u.effective_chat.id)
     b_fmt = await res_uid(f["buyer"] or "N/A", rep, c, u.effective_chat.id)
@@ -173,16 +189,6 @@ async def start_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     etag = f"@{eu.username}" if eu.username else eu.first_name
     amt_display = f"₹{amt_num:,.0f}" if amt_num > 0 else (f['amount'] or 'N/A')
 
-    DEALS_DB[did] = {
-        "status": "ACTIVE",
-        "seller": s_fmt,
-        "buyer": b_fmt,
-        "amount": amt_num,
-        "fee": fee_num,
-        "escrower": etag,
-        "details": f["details"] or "N/A"
-    }
-
     slip = (
         f"<b>ESCROW DEAL</b>\n🪪 <b>DEAL ID:</b> {did}\n\n• <b>ꜱᴇʟʟᴇʀ :</b> {s_fmt}\n• <b>ʙᴜʏᴇʀ  :</b> {b_fmt}\n\n"
         f"• <b>ᴅᴇᴀʟ ᴅᴇᴀᴛᴀɪʟꜱ :</b> {f['details'] or 'N/A'}\n• <b>ᴅᴇᴀʟ ᴀᴍᴏᴜɴᴛ :</b> {amt_display}\n"
@@ -191,11 +197,22 @@ async def start_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=slip, parse_mode="HTML")
     try:
         await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
+        LATEST_PINNED_MSG_ID = sm.message_id
     except: pass
 
+    DEALS_DB[did] = {
+        "status": "ACTIVE",
+        "seller": s_fmt,
+        "buyer": b_fmt,
+        "amount": amt_num,
+        "fee": fee_num,
+        "escrower": etag,
+        "details": f["details"] or "N/A",
+        "msg_id": sm.message_id
+    }
+
 async def close_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    global DEAL_COUNTER, LATEST_ACTIVE_DEAL
-    # 1. Sabse pehle command delete karein
+    global DEAL_COUNTER, LATEST_ACTIVE_DEAL, LATEST_PINNED_MSG_ID
     await safe_delete_cmd(u)
 
     if not await is_admin(u, c):
@@ -203,9 +220,11 @@ async def close_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     
     chat_id = u.effective_chat.id
     amt_str, buyer, seller, did = "", "", "", None
+    rep_msg_id = None
     rep = u.message.reply_to_message
     
     if rep and (rep.text or rep.caption):
+        rep_msg_id = rep.message_id
         raw = rep.text or rep.caption
         f = extract_f(raw)
         did = f["deal_id"]
@@ -214,6 +233,7 @@ async def close_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
             amt_str = str(d["amount"])
             seller = d["seller"]
             buyer = d["buyer"]
+            rep_msg_id = d.get("msg_id", rep_msg_id)
         else:
             if f["amount"]: amt_str = f["amount"]
             if f["seller"]: seller = f["seller"]
@@ -225,6 +245,7 @@ async def close_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
         amt_str = str(d["amount"])
         seller = d["seller"]
         buyer = d["buyer"]
+        rep_msg_id = d.get("msg_id")
 
     if len(c.args) >= 1 and not amt_str: amt_str = c.args[0]
     if len(c.args) >= 2 and not buyer: buyer = c.args[1]
@@ -260,6 +281,9 @@ async def close_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if LATEST_ACTIVE_DEAL == did:
         LATEST_ACTIVE_DEAL = None
 
+    # Unpin previous deal slip automatically
+    await unpin_target_msg(c, chat_id, rep_msg_id)
+
     amt_disp = f"₹{amt_num:,.2f}" if amt_num > 0 else "Deal Amount"
 
     txt = (
@@ -270,6 +294,7 @@ async def close_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     sm = await c.bot.send_message(chat_id=chat_id, text=txt, parse_mode="HTML")
     try:
         await c.bot.pin_chat_message(chat_id=chat_id, message_id=sm.message_id, disable_notification=True)
+        LATEST_PINNED_MSG_ID = sm.message_id
     except: pass
 
     if PROOF_CHANNEL:
@@ -277,18 +302,23 @@ async def close_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
         except: pass
 
 async def hold_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    global LATEST_ACTIVE_DEAL
+    global LATEST_ACTIVE_DEAL, LATEST_PINNED_MSG_ID
     await safe_delete_cmd(u)
     if not await is_admin(u, c): return
 
     chat_id = u.effective_chat.id
     rep = u.message.reply_to_message
+    rep_msg_id = rep.message_id if rep else None
     f = extract_f(rep.text or rep.caption) if rep and (rep.text or rep.caption) else {}
     did = f.get("deal_id") or LATEST_ACTIVE_DEAL or "UNKNOWN"
 
+    if did in DEALS_DB: 
+        DEALS_DB[did]["status"] = "ON HOLD"
+        rep_msg_id = DEALS_DB[did].get("msg_id", rep_msg_id)
+
+    await unpin_target_msg(c, chat_id, rep_msg_id)
+
     rsn = " ".join(c.args) if c.args else "Verification / Dispute Under Review"
-    if did in DEALS_DB: DEALS_DB[did]["status"] = "ON HOLD"
-    
     txt = (
         f"⏳ <b>DEAL ON HOLD</b>\n━━━━━━━━━━━━━━━━━━━\n"
         f"🪪 <b>Deal ID:</b> {did}\n"
@@ -299,15 +329,17 @@ async def hold_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     sm = await c.bot.send_message(chat_id=chat_id, text=txt, parse_mode="HTML")
     try:
         await c.bot.pin_chat_message(chat_id=chat_id, message_id=sm.message_id, disable_notification=True)
+        LATEST_PINNED_MSG_ID = sm.message_id
     except: pass
 
 async def cancel_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    global LATEST_ACTIVE_DEAL
+    global LATEST_ACTIVE_DEAL, LATEST_PINNED_MSG_ID
     await safe_delete_cmd(u)
     if not await is_admin(u, c): return
 
     chat_id = u.effective_chat.id
     rep = u.message.reply_to_message
+    rep_msg_id = rep.message_id if rep else None
     f = extract_f(rep.text or rep.caption) if rep and (rep.text or rep.caption) else {}
     did = f.get("deal_id") or LATEST_ACTIVE_DEAL or "UNKNOWN"
 
@@ -319,6 +351,9 @@ async def cancel_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
         seller = DEALS_DB[did]["seller"]
         buyer = DEALS_DB[did]["buyer"]
         amt_str = str(DEALS_DB[did]["amount"])
+        rep_msg_id = DEALS_DB[did].get("msg_id", rep_msg_id)
+
+    await unpin_target_msg(c, chat_id, rep_msg_id)
 
     s_tag = seller.split()[0] if seller else "@Seller"
     b_tag = buyer.split()[0] if buyer else "@Buyer"
@@ -337,17 +372,19 @@ async def cancel_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     sm = await c.bot.send_message(chat_id=chat_id, text=txt, parse_mode="HTML")
     try:
         await c.bot.pin_chat_message(chat_id=chat_id, message_id=sm.message_id, disable_notification=True)
+        LATEST_PINNED_MSG_ID = sm.message_id
     except: pass
     
     if LATEST_ACTIVE_DEAL == did: LATEST_ACTIVE_DEAL = None
 
 async def refund_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    global LATEST_ACTIVE_DEAL
+    global LATEST_ACTIVE_DEAL, LATEST_PINNED_MSG_ID
     await safe_delete_cmd(u)
     if not await is_admin(u, c): return
 
     chat_id = u.effective_chat.id
     rep = u.message.reply_to_message
+    rep_msg_id = rep.message_id if rep else None
     f = extract_f(rep.text or rep.caption) if rep and (rep.text or rep.caption) else {}
     did = f.get("deal_id") or LATEST_ACTIVE_DEAL or "N/A"
 
@@ -358,6 +395,9 @@ async def refund_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
         DEALS_DB[did]["status"] = "REFUNDED"
         buyer = DEALS_DB[did]["buyer"]
         amt_str = str(DEALS_DB[did]["amount"])
+        rep_msg_id = DEALS_DB[did].get("msg_id", rep_msg_id)
+
+    await unpin_target_msg(c, chat_id, rep_msg_id)
 
     b_tag = buyer.split()[0] if buyer else "@Buyer"
     amt_num = parse_amt(amt_str)
@@ -374,6 +414,7 @@ async def refund_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     sm = await c.bot.send_message(chat_id=chat_id, text=txt, parse_mode="HTML")
     try:
         await c.bot.pin_chat_message(chat_id=chat_id, message_id=sm.message_id, disable_notification=True)
+        LATEST_PINNED_MSG_ID = sm.message_id
     except: pass
     
     if LATEST_ACTIVE_DEAL == did: LATEST_ACTIVE_DEAL = None
@@ -438,6 +479,13 @@ async def admin_hold_cmd(u: Update, c: ContextTypes.DEFAULT_TYPE):
     out.append(f"🛡️ <b>ALL ADMINS TOTAL HOLD: ₹{grand_total:,.2f}</b>")
     await u.message.reply_text("\n".join(out), parse_mode="HTML")
 
+async def purge_pinned_service_msg(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    # Telegram sends a service message when a message is pinned. Auto-delete it!
+    try:
+        if u.message and u.message.pinned_message:
+            await u.message.delete()
+    except: pass
+
 async def handle_txt(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not u.message or not u.message.text: return
     t = u.message.text.strip()
@@ -454,21 +502,4 @@ async def handle_txt(u: Update, c: ContextTypes.DEFAULT_TYPE):
 
 if __name__ == '__main__':
     threading.Thread(target=run_web, daemon=True).start()
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    
-    app.add_handler(CommandHandler("form", form))
-    app.add_handler(CommandHandler("fee", fee_command))
-    app.add_handler(CommandHandler("fees", fee_command))
-    app.add_handler(CommandHandler("deal", start_deal))
-    app.add_handler(CommandHandler("close", close_deal))
-    app.add_handler(CommandHandler("hold", hold_deal))
-    app.add_handler(CommandHandler("cancel", cancel_deal))
-    app.add_handler(CommandHandler("refund", refund_deal))
-    app.add_handler(CommandHandler("status", status_deal))
-    app.add_handler(CommandHandler("stats", stats_cmd))
-    app.add_handler(CommandHandler("adminhold", admin_hold_cmd))
-    
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_txt))
-    
-    app.run_polling(drop_pending_updates=True)
-        
+    app = Appl
