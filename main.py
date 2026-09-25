@@ -124,7 +124,7 @@ async def cmd_form(u: Update, c: ContextTypes.DEFAULT_TYPE):
     msg = (
         "<b>ᴇꜱᴄʀᴏᴡ ᴅᴇᴀʟ ғᴏʀᴍ</b>\n\n• <b>ꜱᴇʟʟᴇʀ :</b> \n\n• <b>ʙᴜʏᴇʀ :</b> \n\n"
         "• <b>ᴅᴇᴀʟ ᴅᴇᴀᴛᴀɪʟꜱ :</b> \n\n• <b>ᴅᴇᴀʟ ᴀᴍᴏᴜɴᴛ :</b> \n\n• <b>ᴇꜱᴄʀᴏᴡ ᴛɪʟʟ :</b> \n\n"
-        "• <b>ғᴏʀ ʀᴇʟᴇᴀsᴇ sᴇʟʟᴇʀ ᴜᴘɪ :</b> \n\n<i>ғᴏʀ ᴍᴏʀᴇ ᴘʀᴏᴏғs ᴄʜᴇᴄᴋ ɢʀᴏᴜᴘ ᴘɪɴ ᴍᴇssᴀɢᴇs..</i>\n\n"
+        "• <b>ғᴏʀ ʀᴇʟᴇᴀsᴇ sᴇʟʟᴇʀ ᴜᴘɪ :</b> \n\n<i>ғᴏʀ ᴍᴏʀᴇ ᴘʀᴏᴏғs ᴄʜᴇᴄᴋ ɢʀᴏᴜᴘ ᴘɪɴ mᴇssᴀɢᴇs..</i>\n\n"
         "⚠️ <b>ESCROW FEES IS NON - REFUNDABLE NO MATTER IF THE DEAL GETS CANCELLED</b> ⚠️"
     )
     await u.message.reply_text(msg, parse_mode="HTML")
@@ -180,8 +180,10 @@ async def cmd_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     )
     sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=msg, parse_mode="HTML")
     try:
-        await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
+        pin_msg = await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
         LAST_PIN = sm.message_id
+        if pin_msg:
+            await c.bot.delete_message(chat_id=u.effective_chat.id, message_id=pin_msg.message_id)
     except: pass
     
     DEALS_DB[did] = {
@@ -273,8 +275,10 @@ async def cmd_close(u: Update, c: ContextTypes.DEFAULT_TYPE):
     )
     sm = await c.bot.send_message(chat_id=cid, text=txt, parse_mode="HTML")
     try:
-        await c.bot.pin_chat_message(chat_id=cid, message_id=sm.message_id, disable_notification=True)
+        pin_msg = await c.bot.pin_chat_message(chat_id=cid, message_id=sm.message_id, disable_notification=True)
         LAST_PIN = sm.message_id
+        if pin_msg:
+            await c.bot.delete_message(chat_id=cid, message_id=pin_msg.message_id)
     except: pass
 
 async def cmd_cancel(u: Update, c: ContextTypes.DEFAULT_TYPE):
@@ -289,8 +293,10 @@ async def cmd_cancel(u: Update, c: ContextTypes.DEFAULT_TYPE):
 
     sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=f"❌ <b>DEAL CANCELLED</b>\n🪪 <b>ID:</b> {did}\n👤 <b>By:</b> {u.effective_user.mention_html()}", parse_mode="HTML")
     try:
-        await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
+        pin_msg = await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
         LAST_PIN = sm.message_id
+        if pin_msg:
+            await c.bot.delete_message(chat_id=u.effective_chat.id, message_id=pin_msg.message_id)
     except: pass
 
 async def cmd_refund(u: Update, c: ContextTypes.DEFAULT_TYPE):
@@ -333,8 +339,10 @@ async def cmd_refund(u: Update, c: ContextTypes.DEFAULT_TYPE):
     )
     sm = await c.bot.send_message(chat_id=cid, text=txt, parse_mode="HTML")
     try:
-        await c.bot.pin_chat_message(chat_id=cid, message_id=sm.message_id, disable_notification=True)
+        pin_msg = await c.bot.pin_chat_message(chat_id=cid, message_id=sm.message_id, disable_notification=True)
         LAST_PIN = sm.message_id
+        if pin_msg:
+            await c.bot.delete_message(chat_id=cid, message_id=pin_msg.message_id)
     except: pass
 
 async def cmd_hold(u: Update, c: ContextTypes.DEFAULT_TYPE):
@@ -351,8 +359,10 @@ async def cmd_hold(u: Update, c: ContextTypes.DEFAULT_TYPE):
 
     sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=f"⏳ <b>DEAL ON HOLD</b>\n━━━━━━━━━━━━━━━━━━━\n🪪 <b>Deal ID:</b> {did}\n⚠️ <b>Reason:</b> {rsn}\n👤 <b>Action By:</b> {u.effective_user.mention_html()}\n\n🔒 <i>Release is paused.</i>", parse_mode="HTML")
     try:
-        await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
+        pin_msg = await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
         LAST_PIN = sm.message_id
+        if pin_msg:
+            await c.bot.delete_message(chat_id=u.effective_chat.id, message_id=pin_msg.message_id)
     except: pass
 
 async def cmd_adminhold(u: Update, c: ContextTypes.DEFAULT_TYPE):
@@ -430,11 +440,4 @@ def main():
     app.add_handler(CommandHandler("refund", cmd_refund))
     app.add_handler(CommandHandler("hold", cmd_hold))
     app.add_handler(CommandHandler("adminhold", cmd_adminhold))
-    app.add_handler(CommandHandler("stats", cmd_stats))
-    
-    app.add_handler(MessageHandler(filters.UpdateType.EDITED_MESSAGE, check_edit))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_router))
-    app.run_polling(drop_pending_updates=True)
-
-if __name__ == '__main__':
-    main()
+    app.add_handler(CommandHandler("stats"
