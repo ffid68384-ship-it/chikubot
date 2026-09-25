@@ -1,4 +1,4 @@
-import os, re, random, unicodedata, threading
+import os, re, unicodedata, threading
 from flask import Flask
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
@@ -16,6 +16,7 @@ PROOF_CHANNEL = ""
 
 DEALS_DB = {}
 STATS = {"total_deals": 0, "total_volume": 0.0, "total_fees": 0.0}
+DEAL_COUNTER = 1  # 01 se start hoga
 
 async def is_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
@@ -139,6 +140,7 @@ async def fee_command(u: Update, c: ContextTypes.DEFAULT_TYPE):
     await send_fee_result(u, amt)
 
 async def start_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    global DEAL_COUNTER
     if not await is_admin(u, c):
         await u.message.reply_text("❌ Sirf escrow admin yeh command chala sakta hai.")
         return
@@ -154,7 +156,11 @@ async def start_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if amt_num > 0:
         fee_num, _, dsp, _ = get_fee(amt_num)
         fee_line = f"\n\nFees {dsp}"
-    did = f"DL-CHIKU-{random.randint(1000, 9999)}"
+    
+    # 01, 02, 03 serial format
+    did = f"DL-CHIKU-{DEAL_COUNTER:02d}"
+    DEAL_COUNTER += 1
+
     eu = u.effective_user
     etag = f"@{eu.username}" if eu.username else eu.first_name
 
@@ -178,6 +184,7 @@ async def start_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     except: pass
 
 async def close_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    global DEAL_COUNTER
     if not await is_admin(u, c):
         await u.message.reply_text("❌ Sirf escrow admin yeh command chala sakta hai.")
         return
@@ -222,15 +229,19 @@ async def close_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
 
     eu = u.effective_user
     etag = f"@{eu.username}" if eu.username else eu.mention_html()
-    tid = did if did else f"DL-CHIKU-{random.randint(1000, 9999)}"
+    
+    if not did:
+        did = f"DL-CHIKU-{DEAL_COUNTER:02d}"
+        DEAL_COUNTER += 1
+
     fee_num, _, _, _ = get_fee(amt_num)
     STATS["total_deals"] += 1
     STATS["total_volume"] += amt_num
     STATS["total_fees"] += fee_num
-    if tid in DEALS_DB: DEALS_DB[tid]["status"] = "COMPLETED"
+    if did in DEALS_DB: DEALS_DB[did]["status"] = "COMPLETED"
 
     txt = (
-        f"✅ <b>Deal Completed</b>\n🪪 <b>Trade ID:</b>\n{tid}\n📤 <b>Released:</b> ₹{amt_num:,.2f}\n"
+        f"✅ <b>Deal Completed</b>\n🪪 <b>Trade ID:</b>\n{did}\n📤 <b>Released:</b> ₹{amt_num:,.2f}\n"
         f"👤 <b>Escrowed By:</b>\n{etag}\n\n~ {buyer} and {seller}\nare requested to drop the\n"
         f"vouch before leaving 👇🏻\n\n<code>Vouch @chikuescrowservice for ₹{amt_num:,.2f} smooth escrow deal</code>"
     )
@@ -330,7 +341,7 @@ async def refund_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
 
 async def status_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not c.args:
-        await u.message.reply_text("⚠️ Deal ID likhein! e.g. <code>/status DL-CHIKU-1234</code>", parse_mode="HTML")
+        await u.message.reply_text("⚠️ Deal ID likhein! e.g. <code>/status DL-CHIKU-01</code>", parse_mode="HTML")
         return
     did = c.args[0].upper().strip()
     if did not in DEALS_DB:
@@ -431,4 +442,4 @@ if __name__ == '__main__':
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_txt))
     
     app.run_polling(drop_pending_updates=True)
-        
+    
