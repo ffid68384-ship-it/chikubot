@@ -156,9 +156,9 @@ async def cmd_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     try:
         await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
         LAST_PIN = sm.message_id
-        async for message in c.bot.get_chat_history(u.effective_chat.id, limit=3):
-            if message.pinned_message and message.pinned_message.message_id == sm.message_id:
-                await message.delete()
+        async for m_obj in c.bot.get_chat_history(u.effective_chat.id, limit=3):
+            if m_obj.pinned_message and m_obj.pinned_message.message_id == sm.message_id:
+                await m_obj.delete()
                 break
     except: pass
     DEALS_DB[did] = {"status": "ACTIVE", "seller": seller, "buyer": buyer, "amount": amt, "escrower": (f"@{eu.username}" if eu.username else eu.first_name), "details": dtl, "msg_id": sm.message_id}
@@ -228,9 +228,9 @@ async def cmd_close(u: Update, c: ContextTypes.DEFAULT_TYPE):
     try:
         await c.bot.pin_chat_message(chat_id=cid, message_id=sm.message_id, disable_notification=True)
         LAST_PIN = sm.message_id
-        async for message in c.bot.get_chat_history(cid, limit=3):
-            if message.pinned_message and message.pinned_message.message_id == sm.message_id:
-                await message.delete()
+        async for m_obj in c.bot.get_chat_history(cid, limit=3):
+            if m_obj.pinned_message and m_obj.pinned_message.message_id == sm.message_id:
+                await m_obj.delete()
                 break
     except: pass
 
@@ -247,9 +247,9 @@ async def cmd_cancel(u: Update, c: ContextTypes.DEFAULT_TYPE):
     try:
         await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
         LAST_PIN = sm.message_id
-        async for message in c.bot.get_chat_history(u.effective_chat.id, limit=3):
-            if message.pinned_message and message.pinned_message.message_id == sm.message_id:
-                await message.delete()
+        async for m_obj in c.bot.get_chat_history(u.effective_chat.id, limit=3):
+            if m_obj.pinned_message and m_obj.pinned_message.message_id == sm.message_id:
+                await m_obj.delete()
                 break
     except: pass
 
@@ -284,9 +284,9 @@ async def cmd_refund(u: Update, c: ContextTypes.DEFAULT_TYPE):
     try:
         await c.bot.pin_chat_message(chat_id=cid, message_id=sm.message_id, disable_notification=True)
         LAST_PIN = sm.message_id
-        async for message in c.bot.get_chat_history(cid, limit=3):
-            if message.pinned_message and message.pinned_message.message_id == sm.message_id:
-                await message.delete()
+        async for m_obj in c.bot.get_chat_history(cid, limit=3):
+            if m_obj.pinned_message and m_obj.pinned_message.message_id == sm.message_id:
+                await m_obj.delete()
                 break
     except: pass
 
@@ -304,9 +304,9 @@ async def cmd_hold(u: Update, c: ContextTypes.DEFAULT_TYPE):
     try:
         await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
         LAST_PIN = sm.message_id
-        async for message in c.bot.get_chat_history(u.effective_chat.id, limit=3):
-            if message.pinned_message and message.pinned_message.message_id == sm.message_id:
-                await message.delete()
+        async for m_obj in c.bot.get_chat_history(u.effective_chat.id, limit=3):
+            if m_obj.pinned_message and m_obj.pinned_message.message_id == sm.message_id:
+                await m_obj.delete()
                 break
     except: pass
 
@@ -376,4 +376,5 @@ def main():
     app.add_handler(CommandHandler("cancel", cmd_cancel))
     app.add_handler(CommandHandler("refund", cmd_refund))
     app.add_handler(CommandHandler("hold", cmd_hold))
-    app.add_handler(CommandHandler("adminhold", cmd_adminh
+    app.add_handler(CommandHandler("adminhold", cmd_adminhold))
+    app.add_handler(CommandHandler
