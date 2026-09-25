@@ -87,7 +87,6 @@ def parse_form(raw):
         elif any(k in c_line for k in ["details", "deatails", "detail"]) and not data["details"]:
             data["details"] = val
         elif any(k in c_line for k in ["amount", "amt", "price", "amunt", "amont", "cost"]):
-            # Line se direct number capture karo bina kisi error ke
             m_num = re.search(r"[₹rs\s]*(\d+(?:\.\d+)?)", val or line, re.I)
             if m_num:
                 data["amount"] = m_num.group(1)
@@ -96,7 +95,6 @@ def parse_form(raw):
         elif "till" in c_line and not data["till"]:
             data["till"] = val
 
-    # Extra Fallback: Agar amount abhi bhi empty hai toh pure text me jahan ₹ laga hai use uthao
     if not data["amount"] or data["amount"].upper() == "N/A":
         pure_no_handles = re.sub(r"@\w+", "", raw)
         m_curr = re.search(r"[₹rs]\s*(\d+(?:\.\d+)?)", pure_no_handles, re.I)
@@ -221,6 +219,48 @@ async def cmd_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
         pass
     DEALS_DB[did] = {"status": "ACTIVE", "seller": seller, "buyer": buyer, "amount": amt, "fee": fee_val, "escrower": (f"@{eu.username}" if eu.username else eu.first_name), "details": dtl, "msg_id": sm.message_id}
 
+async def cmd_received(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    await del_msg(u)
+    if not await is_admin(u, c):
+        return
+    cid = u.effective_chat.id
+    rep = u.message.reply_to_message
+    did, amt, seller, buyer = None, 0.0, "", ""
+
+    if rep and (rep.text or rep.caption):
+        f = parse_form(rep.text or rep.caption)
+        did = f["id"]
+        if did and did in DEALS_DB:
+            amt = DEALS_DB[did]["amount"]
+            seller = DEALS_DB[did]["seller"]
+            buyer = DEALS_DB[did]["buyer"]
+        else:
+            amt = get_amt(f["amount"])
+            seller = f["seller"]
+            buyer = f["buyer"]
+
+    if not did and CURR_DEAL and CURR_DEAL in DEALS_DB:
+        did = CURR_DEAL
+        amt = DEALS_DB[did]["amount"]
+        seller = DEALS_DB[did]["seller"]
+        buyer = DEALS_DB[did]["buyer"]
+
+    did = did or "DL-CHIKU-01"
+    amt_lbl = f"₹{amt:,.0f}" if amt > 0 else "Deal Amount"
+    s_tag = seller.split()[0] if seller else "@Seller"
+    b_tag = buyer.split()[0] if buyer else "@Buyer"
+
+    msg = (
+        f"💰 <b>PAYMENT RECEIVED & CONFIRMED!</b>\n━━━━━━━━━━━━━━━━━━━\n"
+        f"🪪 <b>Deal ID:</b> {did}\n"
+        f"💵 <b>Amount:</b> {amt_lbl}\n"
+        f"👤 <b>Buyer:</b> {b_tag}\n"
+        f"👤 <b>Seller:</b> {s_tag}\n━━━━━━━━━━━━━━━━━━━\n\n"
+        f"🤝 <b>TRANSFER ACCESS TO BUYER WITH SCREENRECORDS !!</b> 🤝\n\n"
+        f"⚠️ <i>Seller bhai video record karke credentials handover karein aur Buyer check karke vouch/confirm karein.</i>"
+    )
+    await c.bot.send_message(chat_id=cid, text=msg, parse_mode="HTML")
+
 async def cmd_close(u: Update, c: ContextTypes.DEFAULT_TYPE):
     global CURR_DEAL, LAST_PIN
     await del_msg(u)
@@ -336,6 +376,8 @@ async def text_router(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await cmd_form(u, c)
     elif t in ["fee", "fees", ".fee", ".fees"]:
         await cmd_fee(u, c)
+    elif t in ["received", ".received"]:
+        await cmd_received(u, c)
     m = re.match(r"^(?:fee|fees|\.fee|\.fees|\/fee|\/fees)\s+([^\s]+)", t)
     if m:
         val = get_amt(m.group(1))
@@ -349,6 +391,7 @@ def main():
     app.add_handler(CommandHandler("fee", cmd_fee))
     app.add_handler(CommandHandler("fees", cmd_fee))
     app.add_handler(CommandHandler("deal", cmd_deal))
+    app.add_handler(CommandHandler("received", cmd_received))
     app.add_handler(CommandHandler("close", cmd_close))
     app.add_handler(CommandHandler("cancel", cmd_cancel))
     app.add_handler(CommandHandler("stats", cmd_stats))
@@ -359,4 +402,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-                    
+    
