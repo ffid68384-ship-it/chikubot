@@ -25,20 +25,22 @@ async def is_admin(u: Update, c: ContextTypes.DEFAULT_TYPE):
     except:
         return False
 
-def clean_txt(t):
-    if not t:
+def universal_clean(text):
+    if not text:
         return ""
-    mapping = {
-        'ꜱ':'s','s':'s','ᴇ':'e','e':'e','ʟ':'l','l':'l','ʀ':'r','r':'r',
-        'ʙ':'b','b':'b','ᴜ':'u','u':'u','ʏ':'y','y':'y','ᴅ':'d','d':'d',
-        'ᴀ':'a','a':'a','ᴛ':'t','t':'t','ɪ':'i','i':'i','ᴏ':'o','o':'o',
-        'ᴡ':'w','w':'w','м':'m','m':'m','ɴ':'n','n':'n','ᴄ':'c','c':'c',
-        'ʜ':'h','h':'h','ᴋ':'k','k':'k','ᴘ':'p','p':'p','ғ':'f','f':'f',
-        '𝖴':'u','U':'u','O':'o','О':'o','а':'a','е':'e','о':'o','р':'p','с':'c'
+    trans_table = {
+        0x1D00: 'a', 0x1D01: 'b', 0x1D02: 'b', 0x1D03: 'b', 0x1D04: 'c', 0x1D05: 'd',
+        0x1D06: 'd', 0x1D07: 'e', 0x1D08: 'e', 0x1D09: 'i', 0x1D0A: 'j', 0x1D0B: 'k',
+        0x1D0C: 'l', 0x1D0D: 'm', 0x1D0E: 'm', 0x1D0F: 'o', 0x1D10: 'o', 0x1D11: 'o',
+        0x1D12: 'o', 0x1D13: 'o', 0x1D14: 'o', 0x1D15: 'u', 0x1D18: 'p', 0x1D19: 'r',
+        0x1D1A: 'r', 0x1D1B: 't', 0x1D1C: 'u', 0x1D1D: 'u', 0x1D1E: 'u', 0x1D1F: 'm',
+        0x1D20: 'v', 0x1D21: 'w', 0x1D22: 'z',
+        ord('а'): 'a', ord('е'): 'e', ord('о'): 'o', ord('р'): 'p', ord('с'): 'c',
+        ord('у'): 'y', ord('х'): 'x', ord('м'): 'm', ord('н'): 'n', ord('т'): 't',
+        ord('ꜱ'): 's', ord('ғ'): 'f', ord('ᴜ'): 'u'
     }
-    t_norm = unicodedata.normalize('NFKD', str(t))
-    res = "".join(mapping.get(ch, ch) for ch in t_norm)
-    return res.lower()
+    t = unicodedata.normalize('NFKD', str(text)).translate(trans_table)
+    return t.lower()
 
 def calc_fee(amt):
     if amt <= 0:
@@ -53,51 +55,73 @@ def calc_fee(amt):
     f = round(amt * 0.03, 2)
     return f, "3%", f"3% - {round(f)}₹", amt - f
 
-def get_amt(val):
-    if not val:
-        return 0.0
-    s = re.sub(r"@\w+", "", str(val))
-    s = s.lower().replace("₹", "").replace(",", "").replace("rs", "").replace("inr", "")
-    m = re.search(r"(\d+(?:\.\d+)?)(\s*k)?", s)
-    if m:
-        return float(m.group(1)) * (1000 if m.group(2) else 1)
-    return 0.0
-
-def parse_form(raw):
-    data = {"seller": "", "buyer": "", "details": "", "amount": "", "till": "", "id": ""}
-    norm = clean_txt(raw)
-
-    dm = re.search(r"dl[-_ ]*chiku[-_ ]*\d+", norm)
+def parse_form_bulletproof(raw):
+    data = {"seller": "", "buyer": "", "details": "", "amount": 0.0, "till": "", "id": ""}
+    
+    # 1. Check deal ID
+    norm_all = universal_clean(raw)
+    dm = re.search(r"dl[-_ ]*chiku[-_ ]*\d+", norm_all)
     if dm:
         data["id"] = re.sub(r"\s+", "", dm.group(0).upper().replace("_", "-"))
 
-    # Extract Blocks with regex on normalized string
-    m_s = re.search(r"seller\s*[:\-]\s*([^\n\r•]+)", norm)
-    if m_s: data["seller"] = m_s.group(1).strip()
+    # 2. Split text cleanly by bullet points • or * or -
+    # Replace all bullets with unique delimiter
+    delimited = re.sub(r'[•\*\-]\s*', '\n@@@ ', raw)
+    sections = delimited.split('\n')
 
-    m_b = re.search(r"buyer\s*[:\-]\s*([^\n\r•]+)", norm)
-    if m_b: data["buyer"] = m_b.group(1).strip()
+    # Temporary multiline accumulator
+    curr_field = None
 
-    m_d = re.search(r"(?:deal\s*)?(?:details|deatails|detail)\s*[:\-]\s*(.*?)(?=\s*[•\*\-]?\s*(?:deal\s*)?(?:amount|amt|price|till)|\Z)", norm, re.S)
-    if m_d: data["details"] = " ".join(m_d.group(1).split()).strip()
+    for line in sections:
+        line_clean = universal_clean(line).strip()
+        if not line_clean:
+            continue
 
-    # Amount block - chahe newline ho ya direct number
-    m_a = re.search(r"(?:deal\s*)?(?:amount|amt|price|amunt|amont)\s*[:\-]\s*([^\n\r•]+)", norm)
-    if m_a:
-        num = re.search(r"(\d+(?:\.\d+)?)", m_a.group(1))
-        data["amount"] = num.group(1) if num else m_a.group(1).strip()
+        if line.startswith('@@@'):
+            content = line.replace('@@@', '', 1).strip()
+            c_content = universal_clean(content)
+            
+            parts = content.split(':', 1)
+            val = parts[1].strip() if len(parts) > 1 else ""
+            c_label = universal_clean(parts[0])
 
-    m_t = re.search(r"(?:escrow\s*)?till\s*[:\-]\s*([^\n\r•]+)", norm)
-    if m_t: data["till"] = m_t.group(1).strip()
+            if 'seller' in c_label:
+                data['seller'] = val
+                curr_field = 'seller'
+            elif 'buyer' in c_label:
+                data['buyer'] = val
+                curr_field = 'buyer'
+            elif any(k in c_label for k in ['detail', 'deatail']):
+                data['details'] = val
+                curr_field = 'details'
+            elif any(k in c_label for k in ['amount', 'amt', 'price', 'cost']):
+                curr_field = 'amount'
+                # Find number inside value
+                m = re.search(r'(\d+(?:\.\d+)?)', universal_clean(val).replace(',', ''))
+                if m:
+                    data['amount'] = float(m.group(1))
+            elif 'till' in c_label:
+                data['till'] = val
+                curr_field = 'till'
+            else:
+                curr_field = None
+        else:
+            # Multi-line continuation (e.g. Unban on new line under details)
+            if curr_field == 'details' and not any(w in line_clean for w in ['escrow', 'fees', 'proof', 'warning']):
+                data['details'] = (data['details'] + " " + line.strip()).strip()
 
-    # Original text preserve for usernames / cases
-    lines = raw.split("\n")
-    for line in lines:
-        c = clean_txt(line)
-        if "seller" in c and ":" in line and not data["seller"]:
-            data["seller"] = line.split(":", 1)[1].strip()
-        elif "buyer" in c and ":" in line and not data["buyer"]:
-            data["buyer"] = line.split(":", 1)[1].strip()
+    # 3. Ultimate Fallback for Amount if missed
+    if data['amount'] == 0.0:
+        no_users = re.sub(r'@\w+', '', norm_all).replace(',', '')
+        # Check around amount keyword
+        m_amt = re.search(r'(?:amount|amt|price)\s*[:\-]?\s*(\d+(?:\.\d+)?)', no_users)
+        if m_amt:
+            data['amount'] = float(m_amt.group(1))
+        else:
+            # Check rupee symbol
+            m_rs = re.search(r'[₹rs]\s*(\d+(?:\.\d+)?)', no_users)
+            if m_rs:
+                data['amount'] = float(m_rs.group(1))
 
     return data
 
@@ -168,7 +192,8 @@ async def cmd_fee(u: Update, c: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML"
         )
         return
-    amt = get_amt(c.args[0])
+    clean_val = re.sub(r'[^\d\.]', '', c.args[0])
+    amt = float(clean_val) if clean_val else 0.0
     if amt > 0:
         await send_calc(u, amt)
 
@@ -186,11 +211,18 @@ async def cmd_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
         pass
 
     raw_text = rep.text or rep.caption
-    f = parse_form(raw_text)
+    f = parse_form_bulletproof(raw_text)
+
+    # Optional manual amount override: /deal 1150
+    if c.args:
+        num = re.sub(r'[^\d\.]', '', c.args[0])
+        if num:
+            f["amount"] = float(num)
+
     seller = await resolve_user(f["seller"] or "N/A", rep, c, u.effective_chat.id)
     buyer = await resolve_user(f["buyer"] or "N/A", rep, c, u.effective_chat.id)
 
-    amt = get_amt(f["amount"])
+    amt = f["amount"]
     fee_val, _, fee_tag, _ = calc_fee(amt)
     fee_line = f"\n\nFees {fee_tag}" if amt > 0 else ""
     did = f"DL-CHIKU-{DEAL_CTR:02d}"
@@ -198,7 +230,7 @@ async def cmd_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     CURR_DEAL = did
     eu = u.effective_user
 
-    amt_lbl = f"₹{amt:,.0f}" if amt > 0 else (f['amount'] if f['amount'] else 'N/A')
+    amt_lbl = f"₹{amt:,.0f}" if amt > 0 else "N/A"
     dtl = f['details'] if f['details'] else 'N/A'
     till = f['till'] if f['till'] else 'SECURE'
 
@@ -226,14 +258,14 @@ async def cmd_received(u: Update, c: ContextTypes.DEFAULT_TYPE):
     did, amt, seller, buyer = None, 0.0, "", ""
 
     if rep and (rep.text or rep.caption):
-        f = parse_form(rep.text or rep.caption)
+        f = parse_form_bulletproof(rep.text or rep.caption)
         did = f["id"]
         if did and did in DEALS_DB:
             amt = DEALS_DB[did]["amount"]
             seller = DEALS_DB[did]["seller"]
             buyer = DEALS_DB[did]["buyer"]
         else:
-            amt = get_amt(f["amount"])
+            amt = f["amount"]
             seller = f["seller"]
             buyer = f["buyer"]
 
@@ -270,7 +302,7 @@ async def cmd_close(u: Update, c: ContextTypes.DEFAULT_TYPE):
 
     if rep and (rep.text or rep.caption):
         r_mid = rep.message_id
-        f = parse_form(rep.text or rep.caption)
+        f = parse_form_bulletproof(rep.text or rep.caption)
         did = f["id"]
         if did and did in DEALS_DB:
             amt = DEALS_DB[did]["amount"]
@@ -278,7 +310,7 @@ async def cmd_close(u: Update, c: ContextTypes.DEFAULT_TYPE):
             buyer = DEALS_DB[did]["buyer"]
             r_mid = DEALS_DB[did].get("msg_id", r_mid)
         else:
-            amt = get_amt(f["amount"])
+            amt = f["amount"]
             seller = f["seller"]
             buyer = f["buyer"]
 
@@ -290,7 +322,8 @@ async def cmd_close(u: Update, c: ContextTypes.DEFAULT_TYPE):
         r_mid = DEALS_DB[did].get("msg_id")
 
     if c.args and amt == 0.0:
-        amt = get_amt(c.args[0])
+        num = re.sub(r'[^\d\.]', '', c.args[0])
+        amt = float(num) if num else 0.0
 
     s_tag = seller.split()[0] if seller else "@Seller"
     b_tag = buyer.split()[0] if buyer else "@Buyer"
@@ -378,7 +411,8 @@ async def text_router(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await cmd_received(u, c)
     m = re.match(r"^(?:fee|fees|\.fee|\.fees|\/fee|\/fees)\s+([^\s]+)", t)
     if m:
-        val = get_amt(m.group(1))
+        num = re.sub(r'[^\d\.]', '', m.group(1))
+        val = float(num) if num else 0.0
         if val > 0:
             await send_calc(u, val)
 
@@ -400,5 +434,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-    
+        
