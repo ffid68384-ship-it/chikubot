@@ -167,7 +167,6 @@ async def start_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await u.message.reply_text("⚠️ Bhare hue <b>FORM</b> ka <b>Reply</b> karke <code>/deal</code> likhein!", parse_mode="HTML")
         return
     
-    # Agar purana form pinned tha toh usko unpin kar do
     try:
         await c.bot.unpin_chat_message(chat_id=u.effective_chat.id, message_id=rep.message_id)
     except: pass
@@ -281,7 +280,6 @@ async def close_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if LATEST_ACTIVE_DEAL == did:
         LATEST_ACTIVE_DEAL = None
 
-    # Unpin previous deal slip automatically
     await unpin_target_msg(c, chat_id, rep_msg_id)
 
     amt_disp = f"₹{amt_num:,.2f}" if amt_num > 0 else "Deal Amount"
@@ -480,7 +478,6 @@ async def admin_hold_cmd(u: Update, c: ContextTypes.DEFAULT_TYPE):
     await u.message.reply_text("\n".join(out), parse_mode="HTML")
 
 async def purge_pinned_service_msg(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    # Telegram sends a service message when a message is pinned. Auto-delete it!
     try:
         if u.message and u.message.pinned_message:
             await u.message.delete()
@@ -502,4 +499,8 @@ async def handle_txt(u: Update, c: ContextTypes.DEFAULT_TYPE):
 
 if __name__ == '__main__':
     threading.Thread(target=run_web, daemon=True).start()
-    app = Appl
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    
+    app.add_handler(CommandHandler("form", form))
+    app.add_handler(CommandHandler("fee", fee_command))
+    app.add_handler(CommandHa
