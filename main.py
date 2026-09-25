@@ -112,31 +112,15 @@ async def del_m(u: Update):
 
 async def send_c(u: Update, amt: float):
     fee, rate, _, rcv = calc_fee(amt)
-    await u.message.reply_text(
-        f"📊 <b>@CHIKUESCROWSERVICE FEE CALCULATOR</b>\n━━━━━━━━━━━━━━━━━━━\n"
-        f"💰 <b>Deal Amount:</b> ₹{amt:,.0f}\n⚡ <b>Fee Rate:</b> {rate}\n"
-        f"💵 <b>Escrow Fee:</b> ₹{fee:,.0f}\n━━━━━━━━━━━━━━━━━━━\n"
-        f"✅ <b>Seller Receives:</b> ₹{rcv:,.0f}\n\n📱 <b>RG :</b> @CHIKUNXT",
-        parse_mode="HTML"
-    )
+    await u.message.reply_text(f"📊 <b>@CHIKUESCROWSERVICE FEE CALCULATOR</b>\n━━━━━━━━━━━━━━━━━━━\n💰 <b>Deal Amount:</b> ₹{amt:,.0f}\n⚡ <b>Fee Rate:</b> {rate}\n💵 <b>Escrow Fee:</b> ₹{fee:,.0f}\n━━━━━━━━━━━━━━━━━━━\n✅ <b>Seller Receives:</b> ₹{rcv:,.0f}\n\n📱 <b>RG :</b> @CHIKUNXT", parse_mode="HTML")
 
 async def cmd_form(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    msg = (
-        "<b>ᴇꜱᴄʀᴏᴡ ᴅᴇᴀʟ ғᴏʀᴍ</b>\n\n• <b>ꜱᴇʟʟᴇʀ :</b> \n\n• <b>ʙᴜʏᴇʀ :</b> \n\n"
-        "• <b>ᴅᴇᴀʟ ᴅᴇᴀᴛᴀɪʟꜱ :</b> \n\n• <b>ᴅᴇᴀʟ ᴀᴍᴏᴜɴᴛ :</b> \n\n• <b>ᴇꜱᴄʀᴏᴡ ᴛɪʟʟ :</b> \n\n"
-        "• <b>ғᴏʀ ʀᴇʟᴇᴀsᴇ sᴇʟʟᴇʀ ᴜᴘɪ :</b> \n\n<i>ғᴏʀ ᴍᴏʀᴇ ᴘʀᴏᴏғs ᴄʜᴇᴄᴋ ɢʀᴏᴜᴘ ᴘɪɴ ᴍᴇssᴀɢᴇs..</i>\n\n"
-        "⚠️ <b>ESCROW FEES IS NON - REFUNDABLE NO MATTER IF THE DEAL GETS CANCELLED</b> ⚠️"
-    )
+    msg = ("<b>ᴇꜱᴄʀᴏᴡ ᴅᴇᴀʟ ғᴏʀᴍ</b>\n\n• <b>ꜱᴇʟʟᴇʀ :</b> \n\n• <b>ʙᴜʏᴇʀ :</b> \n\n• <b>ᴅᴇᴀʟ ᴅᴇᴀᴛᴀɪʟꜱ :</b> \n\n• <b>ᴅᴇᴀʟ ᴀᴍᴏᴜɴᴛ :</b> \n\n• <b>ᴇꜱᴄʀᴏᴡ ᴛɪʟʟ :</b> \n\n• <b>ғᴏʀ ʀᴇʟᴇᴀsᴇ sᴇʟʟᴇʀ ᴜᴘɪ :</b> \n\n<i>ғᴏʀ ᴍᴏʀᴇ ᴘʀᴏᴏғs ᴄʜᴇᴄᴋ ɢʀᴏᴜᴘ ᴘɪɴ ᴍᴇssᴀɢᴇs..</i>\n\n⚠️ <b>ESCROW FEES IS NON - REFUNDABLE NO MATTER IF THE DEAL GETS CANCELLED</b> ⚠️")
     await u.message.reply_text(msg, parse_mode="HTML")
 
 async def cmd_fee(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not c.args:
-        await u.message.reply_text(
-            "<b>@CHIKUESCROWSERVICE CHARGES -</b>\n\n• Under ₹190 - ₹10\n• ₹191 To ₹599 - ₹20\n"
-            "• ₹600 To ₹2000 - 3.5%\n• ₹2001 To ₹3000 - 3%\n• Upper Than ₹3000 - 3%\n\n"
-            "📱 <b>RG :</b> @CHIKUNXT\n━━━━━━━━━━━━━━━━━━━\n💡 Check: <code>fees 2000</code>",
-            parse_mode="HTML"
-        )
+        await u.message.reply_text("<b>@CHIKUESCROWSERVICE CHARGES -</b>\n\n• Under ₹190 - ₹10\n• ₹191 To ₹599 - ₹20\n• ₹600 To ₹2000 - 3.5%\n• ₹2001 To ₹3000 - 3%\n• Upper Than ₹3000 - 3%\n\n📱 <b>RG :</b> @CHIKUNXT\n━━━━━━━━━━━━━━━━━━━\n💡 Check: <code>fees 2000</code>", parse_mode="HTML")
         return
     num = re.sub(r'[^\d\.]', '', c.args[0])
     if num and float(num) > 0: await send_c(u, float(num))
@@ -148,79 +132,53 @@ async def cmd_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not rep or not (rep.text or rep.caption):
         await u.message.reply_text("⚠️ Bhare hue <b>FORM</b> ka reply karke <code>/deal</code> bhejo!", parse_mode="HTML")
         return
-
     if LAST_PIN:
         try: await c.bot.unpin_chat_message(chat_id=u.effective_chat.id, message_id=LAST_PIN)
         except: pass
-
     f = parse_form(rep.text or rep.caption)
     if c.args:
         n = re.sub(r'[^\d\.]', '', c.args[0])
         if n: f["amount"] = float(n)
-
     seller = await resolve_u(f["seller"] or "N/A", rep, c, u.effective_chat.id)
     buyer = await resolve_u(f["buyer"] or "N/A", rep, c, u.effective_chat.id)
     amt = f["amount"]
     fee_val, _, fee_tag, _ = calc_fee(amt)
     fee_line = f"\n\nFees {fee_tag}" if amt > 0 else ""
-    
     did = f"DL-CHIKU-{DEAL_CTR}"
     DEAL_CTR += 1
     CURR_DEAL = did
     eu = u.effective_user
-
     amt_lbl = f"₹{amt:,.0f}" if amt > 0 else "Deal Amount"
     dtl = f['details'] if f['details'] else 'N/A'
     till = f['till'] if f['till'] else 'SECURE'
-
-    msg = (
-        f"<b>ESCROW DEAL</b>\n🪪 <b>DEAL ID:</b> {did}\n\n• <b>ꜱᴇʟʟᴇʀ :</b> {seller}\n• <b>ʙᴜʏᴇʀ  :</b> {buyer}\n\n"
-        f"• <b>ᴅᴇᴀʟ ᴅᴇᴀᴛᴀɪʟꜱ :</b> {dtl}\n• <b>ᴅᴇᴀʟ ᴀᴍᴏᴜɴᴛ :</b> {amt_lbl}\n• <b>ᴇꜱᴄʀᴏᴡ ᴛɪʟʟ :</b> {till}\n\n"
-        f"<b>Escrower :</b> {eu.mention_html()} ({eu.id}){fee_line}"
-    )
+    msg = f"<b>ESCROW DEAL</b>\n🪪 <b>DEAL ID:</b> {did}\n\n• <b>ꜱᴇʟʟᴇʀ :</b> {seller}\n• <b>ʙᴜʏᴇʀ  :</b> {buyer}\n\n• <b>ᴅᴇᴀʟ ᴅᴇᴀᴛᴀɪʟꜱ :</b> {dtl}\n• <b>ᴅᴇᴀʟ ᴀᴍᴏᴜɴᴛ :</b> {amt_lbl}\n• <b>ᴇꜱᴄʀᴏᴡ ᴛɪʟʟ :</b> {till}\n\n<b>Escrower :</b> {eu.mention_html()} ({eu.id}){fee_line}"
     sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=msg, parse_mode="HTML")
     try:
-        pin_msg = await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
+        await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
         LAST_PIN = sm.message_id
-        if pin_msg:
-            await c.bot.delete_message(chat_id=u.effective_chat.id, message_id=pin_msg.message_id)
     except: pass
-    
-    DEALS_DB[did] = {
-        "status": "ACTIVE", "seller": seller, "buyer": buyer, "amount": amt,
-        "escrower": (f"@{eu.username}" if eu.username else eu.first_name),
-        "details": dtl, "msg_id": sm.message_id
-    }
+    DEALS_DB[did] = {"status": "ACTIVE", "seller": seller, "buyer": buyer, "amount": amt, "escrower": (f"@{eu.username}" if eu.username else eu.first_name), "details": dtl, "msg_id": sm.message_id}
 
 async def cmd_received(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(u, c): return
     cid, rep = u.effective_chat.id, u.message.reply_to_message
     did, amt, seller, buyer = None, 0.0, "", ""
-
     if rep and (rep.text or rep.caption):
         f = parse_form(rep.text or rep.caption)
         did = f["id"]
         amt = f["amount"] if f["amount"] > 0 else (DEALS_DB.get(did, {}).get("amount", 0.0) if did in DEALS_DB else 0.0)
         seller = f["seller"] if f["seller"] else (DEALS_DB.get(did, {}).get("seller", "") if did in DEALS_DB else "")
         buyer = f["buyer"] if f["buyer"] else (DEALS_DB.get(did, {}).get("buyer", "") if did in DEALS_DB else "")
-
     if not did and CURR_DEAL and CURR_DEAL in DEALS_DB:
         did = CURR_DEAL
         if amt == 0.0: amt = DEALS_DB[did]["amount"]
         if not seller: seller = DEALS_DB[did]["seller"]
         if not buyer: buyer = DEALS_DB[did]["buyer"]
-
     did = did or CURR_DEAL or f"DL-CHIKU-{DEAL_CTR}"
     amt_lbl = f"₹{amt:,.0f}" if amt > 0 else "Deal Amount"
     s_tag = seller.split()[0] if seller else "@Seller"
     b_tag = buyer.split()[0] if buyer else "@Buyer"
-
-    msg = (
-        f"💰 <b>PAYMENT RECEIVED & CONFIRMED!</b>\n━━━━━━━━━━━━━━━━━━━\n"
-        f"🪪 <b>Deal ID:</b> {did}\n💵 <b>Amount:</b> {amt_lbl}\n👤 <b>Buyer:</b> {b_tag}\n👤 <b>Seller:</b> {s_tag}\n"
-        f"━━━━━━━━━━━━━━━━━━━\n\n🤝 <b>TRANSFER ACCESS TO BUYER WITH SCREENRECORDS !!</b> 🤝\n\n"
-        f"⚠️ <i>Seller video record karke access transfer karein aur Buyer verify karke vouch karein.</i>"
-    )
+    msg = f"💰 <b>PAYMENT RECEIVED & CONFIRMED!</b>\n━━━━━━━━━━━━━━━━━━━\n🪪 <b>Deal ID:</b> {did}\n💵 <b>Amount:</b> {amt_lbl}\n👤 <b>Buyer:</b> {b_tag}\n👤 <b>Seller:</b> {s_tag}\n━━━━━━━━━━━━━━━━━━━\n\n🤝 <b>TRANSFER ACCESS TO BUYER WITH SCREENRECORDS !!</b> 🤝\n\n⚠️ <i>Seller video record karke access transfer karein aur Buyer verify karke vouch karein.</i>"
     await c.bot.send_message(chat_id=cid, text=msg, parse_mode="HTML")
 
 async def cmd_close(u: Update, c: ContextTypes.DEFAULT_TYPE):
@@ -229,7 +187,6 @@ async def cmd_close(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(u, c): return
     cid, rep = u.effective_chat.id, u.message.reply_to_message
     did, amt, seller, buyer, r_mid = None, 0.0, "", "", None
-
     if rep and (rep.text or rep.caption):
         r_mid = rep.message_id
         f = parse_form(rep.text or rep.caption)
@@ -239,46 +196,34 @@ async def cmd_close(u: Update, c: ContextTypes.DEFAULT_TYPE):
             if amt == 0.0: amt = DEALS_DB[did].get("amount", 0.0)
             if not seller: seller = DEALS_DB[did].get("seller", "")
             if not buyer: buyer = DEALS_DB[did].get("buyer", "")
-
     if not did and CURR_DEAL and CURR_DEAL in DEALS_DB:
         did = CURR_DEAL
         if amt == 0.0: amt = DEALS_DB[did]["amount"]
         if not seller: seller = DEALS_DB[did]["seller"]
         if not buyer: buyer = DEALS_DB[did]["buyer"]
         r_mid = DEALS_DB[did].get("msg_id")
-
     if c.args:
         n = re.sub(r'[^\d\.]', '', c.args[0])
         if n and float(n) > 0: amt = float(n)
-
     s_tag = seller.split()[0] if seller else "@Seller"
     b_tag = buyer.split()[0] if buyer else "@Buyer"
     did = did or CURR_DEAL or f"DL-CHIKU-{DEAL_CTR}"
     eu = u.effective_user
-
     STATS["deals"] += 1
     STATS["vol"] += amt
     STATS["fees"] += calc_fee(amt)[0]
     if did in DEALS_DB: DEALS_DB[did]["status"] = "COMPLETED"
-
     target = r_mid or LAST_PIN
     if target:
         try: await c.bot.unpin_chat_message(chat_id=cid, message_id=target)
         except: pass
-
     amt_lbl = f"₹{amt:,.2f}" if amt > 0 else "Deal Amount"
     esc_by = f"@{eu.username}" if eu.username else eu.mention_html()
-    txt = (
-        f"✅ <b>Deal Completed</b>\n🪪 <b>Trade ID:</b>\n{did}\n📤 <b>Released:</b> {amt_lbl}\n"
-        f"👤 <b>Escrowed By:</b>\n{esc_by}\n\n~ {b_tag} and {s_tag}\nare requested to drop the\nvouch before leaving 👇🏻\n\n"
-        f"<code>Vouch @chikuescrowservice for {amt_lbl} smooth escrow deal</code>"
-    )
+    txt = f"✅ <b>Deal Completed</b>\n🪪 <b>Trade ID:</b>\n{did}\n📤 <b>Released:</b> {amt_lbl}\n👤 <b>Escrowed By:</b>\n{esc_by}\n\n~ {b_tag} and {s_tag}\nare requested to drop the\nvouch before leaving 👇🏻\n\n<code>Vouch @chikuescrowservice for {amt_lbl} smooth escrow deal</code>"
     sm = await c.bot.send_message(chat_id=cid, text=txt, parse_mode="HTML")
     try:
-        pin_msg = await c.bot.pin_chat_message(chat_id=cid, message_id=sm.message_id, disable_notification=True)
+        await c.bot.pin_chat_message(chat_id=cid, message_id=sm.message_id, disable_notification=True)
         LAST_PIN = sm.message_id
-        if pin_msg:
-            await c.bot.delete_message(chat_id=cid, message_id=pin_msg.message_id)
     except: pass
 
 async def cmd_cancel(u: Update, c: ContextTypes.DEFAULT_TYPE):
@@ -290,13 +235,10 @@ async def cmd_cancel(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if LAST_PIN:
         try: await c.bot.unpin_chat_message(chat_id=u.effective_chat.id, message_id=LAST_PIN)
         except: pass
-
     sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=f"❌ <b>DEAL CANCELLED</b>\n🪪 <b>ID:</b> {did}\n👤 <b>By:</b> {u.effective_user.mention_html()}", parse_mode="HTML")
     try:
-        pin_msg = await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
+        await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
         LAST_PIN = sm.message_id
-        if pin_msg:
-            await c.bot.delete_message(chat_id=u.effective_chat.id, message_id=pin_msg.message_id)
     except: pass
 
 async def cmd_refund(u: Update, c: ContextTypes.DEFAULT_TYPE):
@@ -305,44 +247,31 @@ async def cmd_refund(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(u, c): return
     cid, rep = u.effective_chat.id, u.message.reply_to_message
     did, amt, buyer = None, 0.0, ""
-
     if rep and (rep.text or rep.caption):
         f = parse_form(rep.text or rep.caption)
         did, amt, buyer = f["id"], f["amount"], f["buyer"]
         if did and did in DEALS_DB:
             if amt == 0.0: amt = DEALS_DB[did].get("amount", 0.0)
             if not buyer: buyer = DEALS_DB[did].get("buyer", "")
-
     if not did and CURR_DEAL and CURR_DEAL in DEALS_DB:
         did = CURR_DEAL
         if amt == 0.0: amt = DEALS_DB[did]["amount"]
         if not buyer: buyer = DEALS_DB[did]["buyer"]
-
     if c.args:
         n = re.sub(r'[^\d\.]', '', c.args[0])
         if n and float(n) > 0: amt = float(n)
-
     b_tag = buyer.split()[0] if buyer else "@Buyer"
     did = did or CURR_DEAL or f"DL-CHIKU-{DEAL_CTR}"
     if did in DEALS_DB: DEALS_DB[did]["status"] = "REFUNDED"
-
     if LAST_PIN:
         try: await c.bot.unpin_chat_message(chat_id=cid, message_id=LAST_PIN)
         except: pass
-
     amt_lbl = f"₹{amt:,.2f}" if amt > 0 else "Deal Amount"
-    txt = (
-        f"🔄 <b>DEAL REFUNDED</b>\n━━━━━━━━━━━━━━━━━━━\n"
-        f"🪪 <b>Trade ID:</b> {did}\n💵 <b>Refunded Amount:</b> {amt_lbl}\n"
-        f"👤 <b>Refunded To:</b> {b_tag}\n👤 <b>Admin:</b> {u.effective_user.mention_html()}\n\n"
-        f"🔒 <i>Deal amount has been safely refunded back to buyer.</i>"
-    )
+    txt = f"🔄 <b>DEAL REFUNDED</b>\n━━━━━━━━━━━━━━━━━━━\n🪪 <b>Trade ID:</b> {did}\n💵 <b>Refunded Amount:</b> {amt_lbl}\n👤 <b>Refunded To:</b> {b_tag}\n👤 <b>Admin:</b> {u.effective_user.mention_html()}\n\n🔒 <i>Deal amount has been safely refunded back to buyer.</i>"
     sm = await c.bot.send_message(chat_id=cid, text=txt, parse_mode="HTML")
     try:
-        pin_msg = await c.bot.pin_chat_message(chat_id=cid, message_id=sm.message_id, disable_notification=True)
+        await c.bot.pin_chat_message(chat_id=cid, message_id=sm.message_id, disable_notification=True)
         LAST_PIN = sm.message_id
-        if pin_msg:
-            await c.bot.delete_message(chat_id=cid, message_id=pin_msg.message_id)
     except: pass
 
 async def cmd_hold(u: Update, c: ContextTypes.DEFAULT_TYPE):
@@ -352,17 +281,13 @@ async def cmd_hold(u: Update, c: ContextTypes.DEFAULT_TYPE):
     did = CURR_DEAL or f"DL-CHIKU-{DEAL_CTR}"
     if did in DEALS_DB: DEALS_DB[did]["status"] = "ON HOLD"
     rsn = " ".join(c.args) if c.args else "Verification / Dispute Under Review"
-    
     if LAST_PIN:
         try: await c.bot.unpin_chat_message(chat_id=u.effective_chat.id, message_id=LAST_PIN)
         except: pass
-
     sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=f"⏳ <b>DEAL ON HOLD</b>\n━━━━━━━━━━━━━━━━━━━\n🪪 <b>Deal ID:</b> {did}\n⚠️ <b>Reason:</b> {rsn}\n👤 <b>Action By:</b> {u.effective_user.mention_html()}\n\n🔒 <i>Release is paused.</i>", parse_mode="HTML")
     try:
-        pin_msg = await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
+        await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
         LAST_PIN = sm.message_id
-        if pin_msg:
-            await c.bot.delete_message(chat_id=u.effective_chat.id, message_id=pin_msg.message_id)
     except: pass
 
 async def cmd_adminhold(u: Update, c: ContextTypes.DEFAULT_TYPE):
@@ -390,14 +315,7 @@ async def cmd_adminhold(u: Update, c: ContextTypes.DEFAULT_TYPE):
     await u.message.reply_text("\n".join(out), parse_mode="HTML")
 
 async def cmd_stats(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    await u.message.reply_text(
-        f"📈 <b>@CHIKUESCROWSERVICE STATS</b>\n━━━━━━━━━━━━━━━━━━━\n"
-        f"🤝 <b>Total Deals:</b> {STATS['deals']}\n"
-        f"💼 <b>Total Volume:</b> ₹{STATS['vol']:,.2f}\n"
-        f"💵 <b>Total Fees:</b> ₹{STATS['fees']:,.2f}\n"
-        f"📱 <b>RG :</b> @CHIKUNXT",
-        parse_mode="HTML"
-    )
+    await u.message.reply_text(f"📈 <b>@CHIKUESCROWSERVICE STATS</b>\n━━━━━━━━━━━━━━━━━━━\n🤝 <b>Total Deals:</b> {STATS['deals']}\n💼 <b>Total Volume:</b> ₹{STATS['vol']:,.2f}\n💵 <b>Total Fees:</b> ₹{STATS['fees']:,.2f}\n📱 <b>RG :</b> @CHIKUNXT", parse_mode="HTML")
 
 async def check_edit(u: Update, c: ContextTypes.DEFAULT_TYPE):
     em = u.edited_message
@@ -429,7 +347,6 @@ async def text_router(u: Update, c: ContextTypes.DEFAULT_TYPE):
 def main():
     threading.Thread(target=run_web, daemon=True).start()
     app = ApplicationBuilder().token(BOT_TOKEN).build()
-    
     app.add_handler(CommandHandler("form", cmd_form))
     app.add_handler(CommandHandler("fee", cmd_fee))
     app.add_handler(CommandHandler("fees", cmd_fee))
@@ -440,4 +357,11 @@ def main():
     app.add_handler(CommandHandler("refund", cmd_refund))
     app.add_handler(CommandHandler("hold", cmd_hold))
     app.add_handler(CommandHandler("adminhold", cmd_adminhold))
-    app.add_handler(CommandHandler("stats"
+    app.add_handler(CommandHandler("stats", cmd_stats))
+    app.add_handler(MessageHandler(filters.UpdateType.EDITED_MESSAGE, check_edit))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_router))
+    app.run_polling(drop_pending_updates=True)
+
+if __name__ == '__main__':
+    main()
+                
