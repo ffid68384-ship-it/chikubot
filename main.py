@@ -25,11 +25,17 @@ async def is_admin(u: Update, c: ContextTypes.DEFAULT_TYPE):
     except:
         return False
 
-def norm(t):
+def clean_txt(t):
     if not t:
         return ""
     n = unicodedata.normalize('NFKD', str(t))
-    conv = {'ꜱ':'s','ᴇ':'e','ʟ':'l','ʀ':'r','ʙ':'b','ᴜ':'u','ʏ':'y','ᴅ':'d','ᴀ':'a','ᴛ':'t','ɪ':'i','ᴏ':'o','ᴡ':'w','м':'m','ɴ':'n','ᴄ':'c','ʜ':'h','ᴋ':'k','ᴘ':'p','ғ':'f'}
+    conv = {
+        'ꜱ':'s','s':'s','ᴇ':'e','e':'e','ʟ':'l','l':'l','ʀ':'r','r':'r',
+        'ʙ':'b','b':'b','ᴜ':'u','u':'u','ʏ':'y','y':'y','ᴅ':'d','d':'d',
+        'ᴀ':'a','a':'a','ᴛ':'t','t':'t','ɪ':'i','i':'i','ᴏ':'o','o':'o',
+        'ᴡ':'w','w':'w','м':'m','m':'m','ɴ':'n','n':'n','ᴄ':'c','c':'c',
+        'ʜ':'h','h':'h','ᴋ':'k','k':'k','ᴘ':'p','p':'p','ғ':'f','f':'f'
+    }
     return "".join(conv.get(ch, ch) for ch in n)
 
 def calc_fee(amt):
@@ -48,28 +54,36 @@ def calc_fee(amt):
 def get_amt(val):
     if not val:
         return 0.0
-    s = str(val).lower().replace("₹","").replace(",","").replace("rs","")
+    s = str(val).lower().replace("₹", "").replace(",", "").replace("rs", "").replace("inr", "")
     m = re.search(r"(\d+(?:\.\d+)?)(\s*k)?", s)
-    return float(m.group(1)) * (1000 if m.group(2) else 1) if m else 0.0
+    if m:
+        return float(m.group(1)) * (1000 if m.group(2) else 1)
+    return 0.0
 
 def parse_form(raw):
-    n = norm(raw)
-    d = {"seller": "", "buyer": "", "details": "", "amount": "", "till": "", "id": ""}
-    m_id = re.search(r"DL[-_ ]*CHIKU[-_ ]*\d+", n, re.I)
-    if m_id:
-        d["id"] = re.sub(r"\s+", "", m_id.group(0).upper().replace("_", "-"))
-    keys = {
-        "seller": r"(?:[•\*\-]?\s*seller)\s*[:\-]\s*([^\n\r]+)",
-        "buyer": r"(?:[•\*\-]?\s*buyer)\s*[:\-]\s*([^\n\r]+)",
-        "details": r"(?:[•\*\-]?\s*(?:deal\s*)?(?:deatails|details|detail))\s*[:\-]\s*([^\n\r]+)",
-        "amount": r"(?:[•\*\-]?\s*(?:deal\s*)?(?:amount|amt|price))\s*[:\-]\s*([^\n\r]+)",
-        "till": r"(?:[•\*\-]?\s*(?:escrow\s*)?till)\s*[:\-]\s*([^\n\r]+)"
-    }
-    for k, pat in keys.items():
-        m = re.search(pat, n, re.I)
-        if m:
-            d[k] = m.group(1).strip()
-    return d
+    data = {"seller": "", "buyer": "", "details": "", "amount": "", "till": "", "id": ""}
+    norm_full = clean_txt(raw)
+    dm = re.search(r"DL[-_ ]*CHIKU[-_ ]*\d+", norm_full, re.I)
+    if dm:
+        data["id"] = re.sub(r"\s+", "", dm.group(0).upper().replace("_", "-"))
+
+    lines = raw.split("\n")
+    for line in lines:
+        cleaned_line = clean_txt(line).strip()
+        if not cleaned_line:
+            continue
+        if re.search(r"(?:^|[•\*\-\s])seller\s*[:\-]", cleaned_line, re.I):
+            data["seller"] = re.split(r"[:\-]", line, 1)[-1].strip()
+        elif re.search(r"(?:^|[•\*\-\s])buyer\s*[:\-]", cleaned_line, re.I):
+            data["buyer"] = re.split(r"[:\-]", line, 1)[-1].strip()
+        elif re.search(r"(?:^|[•\*\-\s])(?:deal\s*)?(?:details|deatails|detail)\s*[:\-]", cleaned_line, re.I):
+            data["details"] = re.split(r"[:\-]", line, 1)[-1].strip()
+        elif re.search(r"(?:^|[•\*\-\s])(?:deal\s*)?(?:amount|amt|price|cost)\s*[:\-]", cleaned_line, re.I):
+            data["amount"] = re.split(r"[:\-]", line, 1)[-1].strip()
+        elif re.search(r"(?:^|[•\*\-\s])(?:escrow\s*)?till\s*[:\-]", cleaned_line, re.I):
+            data["till"] = re.split(r"[:\-]", line, 1)[-1].strip()
+
+    return data
 
 async def resolve_user(u, rep, ctx, cid):
     if not u or u.upper() == "N/A":
@@ -164,7 +178,7 @@ async def cmd_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     DEAL_CTR += 1
     CURR_DEAL = did
     eu = u.effective_user
-    amt_lbl = f"₹{amt:,.0f}" if amt > 0 else (f['amount'] or 'N/A')
+    amt_lbl = f"₹{amt:,.0f}" if amt > 0 else (f['amount'] if f['amount'] else 'N/A')
     dtl = f['details'] if f['details'] else 'N/A'
     till = f['till'] if f['till'] else 'SECURE'
 
