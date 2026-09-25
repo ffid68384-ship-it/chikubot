@@ -62,13 +62,42 @@ def extract_f(raw):
     return f
 
 async def res_uid(u, rep, ctx, cid):
-    if not u or u == "N/A" or ("(" in u and ")" in u): return u or "N/A"
-    cln = u.strip().replace("@","")
-    try:
-        m = await ctx.bot.get_chat_member(cid, f"@{cln}")
-        if m and m.user: return f"@{cln} ({m.user.id})"
-    except: pass
-    return f"@{cln}" if not u.startswith("@") else u
+    if not u or u == "N/A": return u or "N/A"
+    cln = u.strip()
+
+    # Agar pehle se format me ID lagi ho
+    if "(" in cln and ")" in cln: return cln
+
+    # Case 1: Agar seedha number/ID likha ho
+    if cln.isdigit():
+        return f'<a href="tg://user?id={cln}">{cln}</a> ({cln})'
+
+    # Case 2: Telegram Hidden Text Mentions (Bina username walo ka link)
+    if rep and rep.entities:
+        for ent in rep.entities:
+            if ent.type == "text_mention" and ent.user:
+                usr = ent.user
+                mention_text = rep.text[ent.offset:ent.offset+ent.length] if rep.text else ""
+                # Name ya entity text se match karein
+                if (cln.lower() in mention_text.lower()) or (usr.first_name and cln.lower() in usr.first_name.lower()):
+                    return f'{usr.mention_html()} ({usr.id})'
+
+    # Case 3: Agar form bhejne wala user hi buyer ya seller ho
+    if rep and rep.from_user:
+        fu = rep.from_user
+        if (fu.first_name and cln.lower() in fu.first_name.lower()) or (fu.username and cln.replace("@","").lower() == fu.username.lower()):
+            return f'{fu.mention_html()} ({fu.id})'
+
+    # Case 4: Username ke zariye chat member lookup
+    pure_uname = cln.replace("@", "")
+    if cln.startswith("@"):
+        try:
+            m = await ctx.bot.get_chat_member(cid, f"@{pure_uname}")
+            if m and m.user: return f"@{pure_uname} ({m.user.id})"
+        except: pass
+        return f"@{pure_uname}"
+
+    return cln
 
 async def safe_del(u: Update):
     try:
@@ -144,8 +173,11 @@ async def close_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if len(c.args) >= 2 and not buyer: buyer = c.args[1]
     if len(c.args) >= 3 and not seller: seller = c.args[2]
     amt_num = parse_amt(amt_str)
-    seller = f"@{re.search(r'@([A-Za-z0-9_]+)', seller).group(1)}" if (seller and re.search(r"@([A-Za-z0-9_]+)", seller)) else (seller.split()[0] if seller else "@Seller")
-    buyer = f"@{re.search(r'@([A-Za-z0-9_]+)', buyer).group(1)}" if (buyer and re.search(r"@([A-Za-z0-9_]+)", buyer)) else (buyer.split()[0] if buyer else "@Buyer")
+    
+    # Safe tag format handle (agar @ ho ya bina @ ke mention ho)
+    seller_tag = seller.split()[0] if seller else "@Seller"
+    buyer_tag = buyer.split()[0] if buyer else "@Buyer"
+
     eu = u.effective_user
     etag = f"@{eu.username}" if eu.username else eu.mention_html()
     if not did:
@@ -160,7 +192,7 @@ async def close_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
 
     await unpin_old(c, cid, rep_mid)
     amt_disp = f"₹{amt_num:,.2f}" if amt_num > 0 else "Deal Amount"
-    txt = f"✅ <b>Deal Completed</b>\n🪪 <b>Trade ID:</b>\n{did}\n📤 <b>Released:</b> {amt_disp}\n👤 <b>Escrowed By:</b>\n{etag}\n\n~ {buyer} and {seller}\nare requested to drop the\nvouch before leaving 👇🏻\n\n<code>Vouch @chikuescrowservice for {amt_disp} smooth escrow deal</code>"
+    txt = f"✅ <b>Deal Completed</b>\n🪪 <b>Trade ID:</b>\n{did}\n📤 <b>Released:</b> {amt_disp}\n👤 <b>Escrowed By:</b>\n{etag}\n\n~ {buyer_tag} and {seller_tag}\nare requested to drop the\nvouch before leaving 👇🏻\n\n<code>Vouch @chikuescrowservice for {amt_disp} smooth escrow deal</code>"
     sm = await c.bot.send_message(chat_id=cid, text=txt, parse_mode="HTML")
     try:
         await c.bot.pin_chat_message(chat_id=cid, message_id=sm.message_id, disable_notification=True)
@@ -246,18 +278,15 @@ async def status_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     rep = u.message.reply_to_message
     raw_rep = rep.text or rep.caption if rep else ""
     
-    # 1. Reply message se detect karein
     if raw_rep:
         f = extract_f(raw_rep)
         did = f.get("deal_id")
     
-    # 2. Argument /status DL-CHIKU-01 se detect karein
     if not did and c.args:
         raw_arg = " ".join(c.args)
         f_arg = extract_f(raw_arg)
         did = f_arg.get("deal_id") or re.sub(r"\s+", "", raw_arg.upper().replace("_", "-"))
         
-    # 3. Fallback to latest deal
     if not did and LATEST_ACTIVE_DEAL:
         did = LATEST_ACTIVE_DEAL
 
@@ -265,7 +294,6 @@ async def status_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await u.message.reply_text("⚠️ Deal slip par <b>Reply</b> karke <code>/status</code> likhein ya <code>/status DL-CHIKU-01</code> bhejein!", parse_mode="HTML")
         return
 
-    # Database me ho toh wahan se uthayein
     if did in DEALS_DB:
         d = DEALS_DB[did]
         amt = d.get('amount', 0.0)
@@ -274,7 +302,6 @@ async def status_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await u.message.reply_text(f"🔍 <b>DEAL STATUS</b>\n🪪 <b>ID:</b> {did}\n📌 <b>Status:</b> {bdg} {d['status']}\n💰 <b>Amount:</b> {amt_disp}\n👤 <b>Seller:</b> {d.get('seller','N/A')}\n👤 <b>Buyer:</b> {d.get('buyer','N/A')}", parse_mode="HTML")
         return
 
-    # Agar DB me na ho lekin reply message ho toh reply se live parse karke banayein
     if raw_rep:
         f = extract_f(raw_rep)
         st = "COMPLETED" if "completed" in raw_rep.lower() else ("ON HOLD" if "hold" in raw_rep.lower() else ("CANCELLED" if "cancelled" in raw_rep.lower() else "ACTIVE"))
@@ -319,6 +346,26 @@ async def purge_pinned_service_msg(u: Update, c: ContextTypes.DEFAULT_TYPE):
         if u.message and u.message.pinned_message: await u.message.delete()
     except: pass
 
+async def handle_edited_msg(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    em = u.edited_message
+    if not em or not em.from_user: return
+    uid = em.from_user.id
+    if uid == OWNER_ID: return
+    try:
+        admins = await c.bot.get_chat_administrators(em.chat_id)
+        if any(a.user.id == uid for a in admins): return
+    except: pass
+
+    tag = em.from_user.mention_html()
+    try:
+        await em.delete()
+        await c.bot.send_message(
+            chat_id=em.chat_id,
+            text=f"⚠️ {tag} <b>EDITED FORM/MESSAGE NOT ALLOWED ⚠️</b>",
+            parse_mode="HTML"
+        )
+    except: pass
+
 async def handle_txt(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not u.message or not u.message.text: return
     t = u.message.text.strip().lower()
@@ -332,10 +379,4 @@ async def handle_txt(u: Update, c: ContextTypes.DEFAULT_TYPE):
 
 if __name__ == '__main__':
     threading.Thread(target=run_web, daemon=True).start()
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    for cmd, fn in [("form", form), ("fee", fee_command), ("fees", fee_command), ("deal", start_deal), ("close", close_deal), ("hold", hold_deal), ("cancel", cancel_deal), ("refund", refund_deal), ("status", status_deal), ("stats", stats_cmd), ("adminhold", admin_hold_cmd)]:
-        app.add_handler(CommandHandler(cmd, fn))
-    app.add_handler(MessageHandler(filters.StatusUpdate.PINNED_MESSAGE, purge_pinned_service_msg))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_txt))
-    app.run_polling(drop_pending_updates=True)
-    
+    app = ApplicationBuilder().token(BOT_TOKEN).bu
