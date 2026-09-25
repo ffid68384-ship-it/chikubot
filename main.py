@@ -6,14 +6,15 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, fil
 web_app = Flask(__name__)
 @web_app.route('/')
 def home():
-    return "Chiku Escrow 24/7 DB"
+    return "Chiku Escrow 24/7 Live"
 
 def run_web():
     web_app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8938665546:AAH-1KMv8sD33fEXGPGYWmLkA9ZYIxfKJ8I")
 OWNER_ID = 7364435907
-DB_FILE, LAST_PIN = "escrow.db", None
+DB_FILE = "escrow.db"
+LAST_PIN = None
 
 def db_run(query, params=(), fetch=None):
     with sqlite3.connect(DB_FILE) as conn:
@@ -42,6 +43,19 @@ async def is_admin(u: Update, c: ContextTypes.DEFAULT_TYPE):
         return any(a.user.id == u.effective_user.id for a in admins)
     except:
         return True
+
+async def is_owner(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    if not u.effective_user:
+        # Agar user group ya channel ke name se message bhej raha hai
+        if u.effective_chat and u.effective_chat.type in ["group", "supergroup"]:
+            try:
+                admins = await c.bot.get_chat_administrators(u.effective_chat.id)
+                for a in admins:
+                    if a.status == "creator" and a.user.id == OWNER_ID:
+                        return True
+            except: pass
+        return False
+    return u.effective_user.id == OWNER_ID
 
 MAP = {'ɢ':'g','ɪ':'i','ɴ':'n','ʀ':'r','ʏ':'y','ʙ':'b','ʜ':'h','ʟ':'l','ꜱ':'s','ғ':'f','ᴀ':'a','ᴄ':'c','ᴅ':'d','ᴇ':'e','ᴋ':'k','ᴍ':'m','ᴏ':'o','ᴘ':'p','ᴛ':'t','ᴜ':'u','ᴡ':'w','ᴊ':'j','ǫ':'q','ᴠ':'v','ᴢ':'z','𝖴':'u','U':'u','O':'o','О':'o','а':'a','е':'e','о':'o','р':'p','с':'c','у':'y','х':'x','м':'m','н':'n','т':'t'}
 
@@ -156,13 +170,17 @@ async def cmd_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     eu = u.effective_user
 
     amt_lbl = f"₹{amt:,.0f}" if amt > 0 else "Deal Amount"
-    msg = f"<b>ESCROW DEAL</b>\n🪪 <b>DEAL ID:</b> {did}\n\n• <b>ꜱᴇʟʟᴇʀ :</b> {seller}\n• <b>ʙᴜʏᴇʀ  :</b> {buyer}\n\n• <b>ᴅᴇᴀʟ ᴅᴇᴀᴛᴀɪʟꜱ :</b> {f['details'] or 'N/A'}\n• <b>ᴅᴇᴀʟ ᴀᴍᴏᴜɴᴛ :</b> {amt_lbl}\n• <b>ᴇꜱᴄʀᴏᴡ ᴛɪʟʟ :</b> {f['till'] or 'SECURE'}\n\n<b>Escrower :</b> {eu.mention_html()} ({eu.id}){fee_line}"
+    esc_name = eu.mention_html() if eu else "Admin"
+    esc_tag = (f"@{eu.username}" if eu.username else eu.first_name) if eu else "Admin"
+    esc_id = f"({eu.id})" if eu else ""
+    
+    msg = f"<b>ESCROW DEAL</b>\n🪪 <b>DEAL ID:</b> {did}\n\n• <b>ꜱᴇʟʟᴇʀ :</b> {seller}\n• <b>ʙᴜʏᴇʀ  :</b> {buyer}\n\n• <b>ᴅᴇᴀʟ ᴅᴇᴀᴛᴀɪʟꜱ :</b> {f['details'] or 'N/A'}\n• <b>ᴅᴇᴀʟ ᴀᴍᴏᴜɴᴛ :</b> {amt_lbl}\n• <b>ᴇꜱᴄʀᴏᴡ ᴛɪʟʟ :</b> {f['till'] or 'SECURE'}\n\n<b>Escrower :</b> {esc_name} {esc_id}{fee_line}"
     sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=msg, parse_mode="HTML")
     try:
         await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
         LAST_PIN = sm.message_id
     except: pass
-    db_run('INSERT OR REPLACE INTO deals VALUES (?, "ACTIVE", ?, ?, ?, ?, ?, ?)', (did, seller, buyer, amt, fee_val, f"@{eu.username}" if eu.username else eu.first_name, sm.message_id))
+    db_run('INSERT OR REPLACE INTO deals VALUES (?, "ACTIVE", ?, ?, ?, ?, ?, ?)', (did, seller, buyer, amt, fee_val, esc_tag, sm.message_id))
 
 async def cmd_received(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(u, c): return
@@ -222,7 +240,8 @@ async def cmd_close(u: Update, c: ContextTypes.DEFAULT_TYPE):
     amt_lbl = f"₹{amt:,.2f}" if amt > 0 else "Deal Amount"
     s_tag = seller.split()[0] if seller else "@Seller"
     b_tag = buyer.split()[0] if buyer else "@Buyer"
-    esc_by = f"@{u.effective_user.username}" if u.effective_user.username else u.effective_user.mention_html()
+    eu = u.effective_user
+    esc_by = (f"@{eu.username}" if eu.username else eu.mention_html()) if eu else "Admin"
     txt = f"✅ <b>Deal Completed</b>\n🪪 <b>Trade ID:</b>\n{did or 'DL-CHIKU'}\n📤 <b>Released:</b> {amt_lbl}\n👤 <b>Escrowed By:</b>\n{esc_by}\n\n~ {b_tag} and {s_tag}\nare requested to drop the\nvouch before leaving 👇🏻\n\n<code>Vouch @chikuescrowservice for {amt_lbl} smooth escrow deal</code>"
     sm = await c.bot.send_message(chat_id=cid, text=txt, parse_mode="HTML")
     try:
@@ -240,7 +259,8 @@ async def cmd_cancel(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if LAST_PIN:
         try: await c.bot.unpin_chat_message(chat_id=u.effective_chat.id, message_id=LAST_PIN)
         except: pass
-    sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=f"❌ <b>DEAL CANCELLED</b>\n🪪 <b>ID:</b> {did}\n👤 <b>By:</b> {u.effective_user.mention_html()}", parse_mode="HTML")
+    by_txt = u.effective_user.mention_html() if u.effective_user else "Admin"
+    sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=f"❌ <b>DEAL CANCELLED</b>\n🪪 <b>ID:</b> {did}\n👤 <b>By:</b> {by_txt}", parse_mode="HTML")
     try:
         await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
         LAST_PIN = sm.message_id
@@ -265,7 +285,8 @@ async def cmd_refund(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if LAST_PIN:
         try: await c.bot.unpin_chat_message(chat_id=u.effective_chat.id, message_id=LAST_PIN)
         except: pass
-    txt = f"🔄 <b>DEAL REFUNDED</b>\n━━━━━━━━━━━━━━━━━━━\n🪪 <b>Trade ID:</b> {did or 'DL-ACTIVE'}\n💵 <b>Refunded Amount:</b> ₹{amt:,.2f}\n👤 <b>Refunded To:</b> {buyer.split()[0] if buyer else '@Buyer'}\n👤 <b>Admin:</b> {u.effective_user.mention_html()}\n\n🔒 <i>Deal amount has been safely refunded back to buyer.</i>"
+    adm_txt = u.effective_user.mention_html() if u.effective_user else "Admin"
+    txt = f"🔄 <b>DEAL REFUNDED</b>\n━━━━━━━━━━━━━━━━━━━\n🪪 <b>Trade ID:</b> {did or 'DL-ACTIVE'}\n💵 <b>Refunded Amount:</b> ₹{amt:,.2f}\n👤 <b>Refunded To:</b> {buyer.split()[0] if buyer else '@Buyer'}\n👤 <b>Admin:</b> {adm_txt}\n\n🔒 <i>Deal amount has been safely refunded back to buyer.</i>"
     sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=txt, parse_mode="HTML")
     try:
         await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
@@ -283,7 +304,8 @@ async def cmd_hold(u: Update, c: ContextTypes.DEFAULT_TYPE):
         try: await c.bot.unpin_chat_message(chat_id=u.effective_chat.id, message_id=LAST_PIN)
         except: pass
     rsn = " ".join(c.args) if c.args else "Verification Under Review"
-    sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=f"⏳ <b>DEAL ON HOLD</b>\n━━━━━━━━━━━━━━━━━━━\n🪪 <b>Deal ID:</b> {did}\n⚠️ <b>Reason:</b> {rsn}\n👤 <b>Action By:</b> {u.effective_user.mention_html()}\n\n🔒 <i>Release is paused.</i>", parse_mode="HTML")
+    by_txt = u.effective_user.mention_html() if u.effective_user else "Admin"
+    sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=f"⏳ <b>DEAL ON HOLD</b>\n━━━━━━━━━━━━━━━━━━━\n🪪 <b>Deal ID:</b> {did}\n⚠️ <b>Reason:</b> {rsn}\n👤 <b>Action By:</b> {by_txt}\n\n🔒 <i>Release is paused.</i>", parse_mode="HTML")
     try:
         await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
         LAST_PIN = sm.message_id
@@ -297,7 +319,7 @@ async def cmd_adminhold(u: Update, c: ContextTypes.DEFAULT_TYPE):
         return
     ag, gtot = {}, 0.0
     for r in rows:
-        did, status, amt, adm = r[0], r[1], r[2], r[3]
+        did, status, amt, adm = r[0], r[1], (r[2] or 0.0), (r[3] or "Admin")
         ag.setdefault(adm, []).append((did, amt, status))
         gtot += amt
     out = ["🛡️ <b>ADMIN HOLD STATUS</b>\n━━━━━━━━━━━━━━━━━━━\n"]
@@ -307,6 +329,24 @@ async def cmd_adminhold(u: Update, c: ContextTypes.DEFAULT_TYPE):
             out.append(f"  • <b>{did}</b> — ₹{amt:,.0f} ({status})\n    Fee: {calc_fee(amt)[1]} | Net: ₹{calc_fee(amt)[3]:,.0f}")
         out.append("")
     out.append(f"💰 <b>TOTAL HOLD ACROSS ALL ADMINS: ₹{gtot:,.2f}</b>")
+    await u.message.reply_text("\n".join(out), parse_mode="HTML")
+
+async def cmd_leaderboard(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    if not await is_owner(u, c):
+        await u.message.reply_text("⛔ <b>Access Denied:</b> Yeh command sirf <b>Owner</b> ke liye reserved hai!", parse_mode="HTML")
+        return
+    rows = db_run('SELECT escrower, COUNT(*), COALESCE(SUM(amt), 0.0) FROM deals WHERE status = "COMPLETED" GROUP BY escrower ORDER BY SUM(amt) DESC', fetch="all")
+    if not rows:
+        await u.message.reply_text("🏆 <b>ESCROW LEADERBOARD</b>\n━━━━━━━━━━━━━━━━━━━\nAbhi tak koi deal complete nahi hui hai.", parse_mode="HTML")
+        return
+    medals = ["🥇", "🥈", "🥉", "🎖️", "🎗️"]
+    out = ["🏆 <b>ESCROW ADMIN LEADERBOARD</b>\n━━━━━━━━━━━━━━━━━━━\n"]
+    for idx, (adm, cnt, vol) in enumerate(rows):
+        icon = medals[idx] if idx < len(medals) else "🔹"
+        out.append(f"{icon} <b>#{idx+1} {adm}</b>\n   • Deals Done: <b>{cnt}</b>\n   • Handled Volume: <b>₹{vol:,.2f}</b>\n")
+    tot_vol = sum(r[2] for r in rows)
+    out.append("━━━━━━━━━━━━━━━━━━━")
+    out.append(f"📊 <b>Total Team Volume: ₹{tot_vol:,.2f}</b>")
     await u.message.reply_text("\n".join(out), parse_mode="HTML")
 
 async def cmd_stats(u: Update, c: ContextTypes.DEFAULT_TYPE):
@@ -328,36 +368,8 @@ async def check_edit(u: Update, c: ContextTypes.DEFAULT_TYPE):
 async def text_router(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not u.message or not u.message.text: return
     t = u.message.text.strip().lower()
-    if t in ["form", ".form"]: await cmd_form(u, c)
-    elif t in ["fee", "fees", ".fee", ".fees"]: await cmd_fee(u, c)
-    elif t in ["stats", ".stats"]: await cmd_stats(u, c)
-    elif t in ["adminhold", ".adminhold"]: await cmd_adminhold(u, c)
-    elif t in ["refund", ".refund"]: await cmd_refund(u, c)
-    elif t in ["received", ".received", "recieved", ".recieved", "receive", ".receive", "recive", ".recive"]: await cmd_received(u, c)
-    m = re.match(r"^(?:fee|fees|\.fee|\.fees|\/fee|\/fees)\s+([^\s]+)", t)
-    if m:
-        n = re.sub(r'[^\d\.]', '', m.group(1))
-        if n and float(n) > 0: await send_c(u, float(n))
-
-def main():
-    threading.Thread(target=run_web, daemon=True).start()
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    for c_name in ["form"]: app.add_handler(CommandHandler(c_name, cmd_form))
-    for c_name in ["fee", "fees"]: app.add_handler(CommandHandler(c_name, cmd_fee))
-    for c_name in ["deal"]: app.add_handler(CommandHandler(c_name, cmd_deal))
-    for c_name in ["received", "recieved", "receive", "recive"]: app.add_handler(CommandHandler(c_name, cmd_received))
-    for c_name in ["close"]: app.add_handler(CommandHandler(c_name, cmd_close))
-    for c_name in ["cancel"]: app.add_handler(CommandHandler(c_name, cmd_cancel))
-    for c_name in ["refund"]: app.add_handler(CommandHandler(c_name, cmd_refund))
-    for c_name in ["hold"]: app.add_handler(CommandHandler(c_name, cmd_hold))
-    for c_name in ["adminhold"]: app.add_handler(CommandHandler(c_name, cmd_adminhold))
-    for c_name in ["stats"]: app.add_handler(CommandHandler(c_name, cmd_stats))
-    app.add_handler(MessageHandler(filters.UpdateType.EDITED_MESSAGE, check_edit))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_router))
-    app.run_polling(drop_pending_updates=True)
-
-if __name__ == '__main__':
-    main()
-
-
-    
+    raw = t.split('@')[0]
+    if raw in ["form", ".form"]: await cmd_form(u, c)
+    elif raw in ["fee", "fees", ".fee", ".fees"]: await cmd_fee(u, c)
+    elif raw in ["stats", ".stats"]: await cmd_stats(u, c)
+    elif raw in ["leaderboard", ".leaderboard", "/leaderboard"]: await cmd
