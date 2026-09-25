@@ -56,7 +56,9 @@ def calc_fee(amt):
 def get_amt(val):
     if not val:
         return 0.0
-    s = str(val).lower().replace("₹", "").replace(",", "").replace("rs", "").replace("inr", "")
+    # Usernames aur IDs ko pehle hi hata do taaki @nexatrader78 ka 78 na pakde
+    s = re.sub(r"@\w+", "", str(val))
+    s = s.lower().replace("₹", "").replace(",", "").replace("rs", "").replace("inr", "")
     m = re.search(r"(\d+(?:\.\d+)?)(\s*k)?", s)
     if m:
         return float(m.group(1)) * (1000 if m.group(2) else 1)
@@ -85,20 +87,17 @@ def parse_form(raw):
             data["buyer"] = val
         elif any(k in c_line for k in ["details", "deatails", "detail"]) and not data["details"]:
             data["details"] = val
-        elif any(k in c_line for k in ["amont", "amount", "amunt", "amt", "price"]) and not data["amount"]:
-            data["amount"] = val if val else line.strip()
+        # Check specifically for AMOUNT line
+        elif ("am" in c_line and "nt" in c_line) or "amt" in c_line or "price" in c_line:
+            if not data["amount"]:
+                # Is line me se directly number extract karo
+                num_match = re.search(r"(\d+)", val or line)
+                if num_match:
+                    data["amount"] = num_match.group(1)
+                else:
+                    data["amount"] = val
         elif "till" in c_line and not data["till"]:
             data["till"] = val
-
-    # Direct fallback: Agar amount abhi bhi khali ho toh pure text me se ₹ ya amount line extract karo
-    if not data["amount"] or data["amount"].upper() == "N/A":
-        m_amt = re.search(r"(?:amount|amunt|amont|amt)[\s\:\-]+([^\n\r]+)", norm_full)
-        if m_amt:
-            data["amount"] = m_amt.group(1).strip()
-        else:
-            m_rs = re.search(r"[₹rs]\s*(\d+)", raw, re.I)
-            if m_rs:
-                data["amount"] = m_rs.group(1).strip()
 
     return data
 
@@ -356,4 +355,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-                    
+        
