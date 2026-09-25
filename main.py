@@ -346,4 +346,7 @@ async def text_router(u: Update, c: ContextTypes.DEFAULT_TYPE):
 def main():
     threading.Thread(target=run_web, daemon=True).start()
     app = ApplicationBuilder().token(BOT_TOKEN).build()
-    for name, fn in [("form", cmd_form), ("fee", cmd_fee), ("fees", cmd_fee), ("deal", cmd_deal), ("close", cmd_close), ("cancel", cmd_cancel), ("refund", cmd_refund), ("hold", cmd_
+    app.add_handler(CommandHandler("form", cmd_form))
+    app.add_handler(CommandHandler("fee", cmd_fee))
+    app.add_handler(CommandHandler("fees", cmd_fee))
+    app.add_handler(Co
