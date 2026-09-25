@@ -4,11 +4,12 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
 web_app = Flask(__name__)
+
 @web_app.route('/')
-def home(): 
+def home():
     return "Chiku Escrow 24/7"
 
-def run_web(): 
+def run_web():
     web_app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8938665546:AAH-1KMv8sD33fEXGPGYWmLkA9ZYIxfKJ8I")
@@ -17,15 +18,15 @@ DEALS_DB, STATS = {}, {"total_deals": 0, "total_volume": 0.0, "total_fees": 0.0}
 DEAL_COUNTER, LATEST_ACTIVE_DEAL, LATEST_PINNED_MSG_ID = 1, None, None
 
 async def is_admin(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    if u.effective_user.id == OWNER_ID: 
+    if u.effective_user.id == OWNER_ID:
         return True
-    try: 
+    try:
         return any(a.user.id == u.effective_user.id for a in await c.bot.get_chat_administrators(u.effective_chat.id))
-    except: 
+    except:
         return False
 
 def norm_txt(t):
-    if not t: 
+    if not t:
         return ""
     norm = unicodedata.normalize('NFKD', str(t))
     conv = {
@@ -38,18 +39,18 @@ def norm_txt(t):
     return "".join(conv.get(ch, ch) for ch in norm)
 
 def get_fee(amt):
-    if amt <= 0: 
+    if amt <= 0:
         return 0.0, "0%", "0₹", 0.0
-    if amt <= 190: 
+    if amt <= 190:
         return 10.0, "Flat ₹10", "Rs 10", amt - 10.0
-    if amt <= 599: 
+    if amt <= 599:
         return 20.0, "Flat ₹20", "Rs 20", amt - 20.0
-    if amt <= 2000: 
+    if amt <= 2000:
         return round(amt*0.035, 2), "3.5%", f"3.5% - {round(amt*0.035):,.0f}₹", amt - round(amt*0.035, 2)
     return round(amt*0.03, 2), "3%", f"3% - {round(amt*0.03):,.0f}₹", amt - round(amt*0.03, 2)
 
 def parse_amt(val):
-    if not val: 
+    if not val:
         return 0.0
     val_clean = str(val).lower().replace("₹", "").replace(",", "").replace("rs", "").replace("inr", "")
     m = re.search(r"(\d+(?:\.\d+)?)(\s*k)?", val_clean)
@@ -62,7 +63,7 @@ def extract_f(raw):
     n = norm_txt(raw)
     f = {"seller": "", "buyer": "", "details": "", "amount": "", "till": "", "upi": "", "deal_id": ""}
     dm = re.search(r"DL[-_ ]*CHIKU[-_ ]*\d+", n, re.I)
-    if dm: 
+    if dm:
         f["deal_id"] = re.sub(r"\s+", "", dm.group(0).upper().replace("_", "-"))
     patterns = {
         "seller": r"(?:[•\*\-]?\s*seller|sell(?:er)?)\s*[:\-]\s*([^\n\r]+)",
@@ -74,17 +75,17 @@ def extract_f(raw):
     }
     for key, p in patterns.items():
         m = re.search(p, n, re.I)
-        if m: 
+        if m:
             f[key] = m.group(1).strip()
     return f
 
 async def res_uid(u, rep, ctx, cid):
-    if not u or u.upper() == "N/A": 
+    if not u or u.upper() == "N/A":
         return u or "N/A"
     cln = u.strip()
-    if "(" in cln and ")" in cln: 
+    if "(" in cln and ")" in cln:
         return cln
-    if cln.isdigit(): 
+    if cln.isdigit():
         return f'<a href="tg://user?id={cln}">{cln}</a> ({cln})'
     if cln.lower() in ["me", "i", "myself", "mai", "main", "admin"] and rep and rep.from_user:
         fu = rep.from_user
@@ -104,27 +105,27 @@ async def res_uid(u, rep, ctx, cid):
     if cln.startswith("@"):
         try:
             m = await ctx.bot.get_chat_member(cid, f"@{pure_u}")
-            if m and m.user: 
+            if m and m.user:
                 return f"@{pure_u} ({m.user.id})"
-        except: 
+        except:
             pass
         return f"@{pure_u}"
     return cln
 
 async def safe_del(u: Update):
     try:
-        if u.message: 
+        if u.message:
             await u.message.delete()
-    except: 
+    except:
         pass
 
 async def unpin_old(c: ContextTypes.DEFAULT_TYPE, cid, mid=None):
     global LATEST_PINNED_MSG_ID
     tgt = mid or LATEST_PINNED_MSG_ID
     if tgt:
-        try: 
+        try:
             await c.bot.unpin_chat_message(chat_id=cid, message_id=tgt)
-        except: 
+        except:
             pass
 
 async def send_fee_result(u: Update, amt: float):
@@ -156,20 +157,20 @@ async def fee_command(u: Update, c: ContextTypes.DEFAULT_TYPE):
         )
         return
     amt = parse_amt(c.args[0])
-    if amt > 0: 
+    if amt > 0:
         await send_fee_result(u, amt)
 
 async def start_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     global DEAL_COUNTER, LATEST_ACTIVE_DEAL, LATEST_PINNED_MSG_ID
-    if not await is_admin(u, c): 
+    if not await is_admin(u, c):
         return
     rep = u.message.reply_to_message
     if not rep or not (rep.text or rep.caption):
         await u.message.reply_text("⚠️ Bhare hue <b>FORM</b> ka <b>Reply</b> karke <code>/deal</code> likhein!", parse_mode="HTML")
         return
-    try: 
+    try:
         await c.bot.unpin_chat_message(chat_id=u.effective_chat.id, message_id=rep.message_id)
-    except: 
+    except:
         pass
     f = extract_f(rep.text or rep.caption)
     s_fmt = await res_uid(f["seller"] or "N/A", rep, c, u.effective_chat.id)
@@ -192,14 +193,14 @@ async def start_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     try:
         await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
         LATEST_PINNED_MSG_ID = sm.message_id
-    except: 
+    except:
         pass
     DEALS_DB[did] = {"status": "ACTIVE", "seller": s_fmt, "buyer": b_fmt, "amount": amt_num, "fee": fee_num, "escrower": (f"@{eu.username}" if eu.username else eu.first_name), "details": details, "msg_id": sm.message_id}
 
 async def close_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     global DEAL_COUNTER, LATEST_ACTIVE_DEAL, LATEST_PINNED_MSG_ID
     await safe_del(u)
-    if not await is_admin(u, c): 
+    if not await is_admin(u, c):
         return
     cid, rep, did, amt_str, buyer, seller, rep_mid = u.effective_chat.id, u.message.reply_to_message, None, "", "", "", None
     if rep and (rep.text or rep.caption):
@@ -216,11 +217,11 @@ async def close_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
         amt_str = str(DEALS_DB[did]["amount"])
         seller, buyer = DEALS_DB[did]["seller"], DEALS_DB[did]["buyer"]
         rep_mid = DEALS_DB[did].get("msg_id")
-    if len(c.args) >= 1 and not amt_str: 
+    if len(c.args) >= 1 and not amt_str:
         amt_str = c.args[0]
-    if len(c.args) >= 2 and not buyer: 
+    if len(c.args) >= 2 and not buyer:
         buyer = c.args[1]
-    if len(c.args) >= 3 and not seller: 
+    if len(c.args) >= 3 and not seller:
         seller = c.args[2]
     
     amt_num = parse_amt(amt_str)
@@ -245,18 +246,18 @@ async def close_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     try:
         await c.bot.pin_chat_message(chat_id=cid, message_id=sm.message_id, disable_notification=True)
         LATEST_PINNED_MSG_ID = sm.message_id
-    except: 
+    except:
         pass
     if PROOF_CHANNEL:
-        try: 
+        try:
             await c.bot.send_message(chat_id=PROOF_CHANNEL, text=sm.text, parse_mode="HTML")
-        except: 
+        except:
             pass
 
 async def hold_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     global LATEST_ACTIVE_DEAL, LATEST_PINNED_MSG_ID
     await safe_del(u)
-    if not await is_admin(u, c): 
+    if not await is_admin(u, c):
         return
     cid, rep = u.effective_chat.id, u.message.reply_to_message
     rep_mid = rep.message_id if rep else None
@@ -274,13 +275,13 @@ async def hold_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     try:
         await c.bot.pin_chat_message(chat_id=cid, message_id=sm.message_id, disable_notification=True)
         LATEST_PINNED_MSG_ID = sm.message_id
-    except: 
+    except:
         pass
 
 async def cancel_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     global LATEST_ACTIVE_DEAL, LATEST_PINNED_MSG_ID
     await safe_del(u)
-    if not await is_admin(u, c): 
+    if not await is_admin(u, c):
         return
     cid, rep = u.effective_chat.id, u.message.reply_to_message
     rep_mid = rep.message_id if rep else None
@@ -301,15 +302,15 @@ async def cancel_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     try:
         await c.bot.pin_chat_message(chat_id=cid, message_id=sm.message_id, disable_notification=True)
         LATEST_PINNED_MSG_ID = sm.message_id
-    except: 
+    except:
         pass
-    if LATEST_ACTIVE_DEAL == did: 
+    if LATEST_ACTIVE_DEAL == did:
         LATEST_ACTIVE_DEAL = None
 
 async def refund_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     global LATEST_ACTIVE_DEAL, LATEST_PINNED_MSG_ID
     await safe_del(u)
-    if not await is_admin(u, c): 
+    if not await is_admin(u, c):
         return
     cid, rep = u.effective_chat.id, u.message.reply_to_message
     rep_mid = rep.message_id if rep else None
@@ -330,9 +331,9 @@ async def refund_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     try:
         await c.bot.pin_chat_message(chat_id=cid, message_id=sm.message_id, disable_notification=True)
         LATEST_PINNED_MSG_ID = sm.message_id
-    except: 
+    except:
         pass
-    if LATEST_ACTIVE_DEAL == did: 
+    if LATEST_ACTIVE_DEAL == did:
         LATEST_ACTIVE_DEAL = None
 
 async def status_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
@@ -340,14 +341,13 @@ async def status_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     rep = u.message.reply_to_message
     raw_rep = rep.text or rep.caption if rep else ""
     did = extract_f(raw_rep).get("deal_id") if raw_rep else None
-    if not did and c.args: 
+    if not did and c.args:
         did = extract_f(" ".join(c.args)).get("deal_id") or re.sub(r"\s+", "", " ".join(c.args).upper().replace("_", "-"))
-    if not did and LATEST_ACTIVE_DEAL: 
+    if not did and LATEST_ACTIVE_DEAL:
         did = LATEST_ACTIVE_DEAL
-    if not did: 
+    if not did:
         await u.message.reply_text("⚠️ Deal slip par <b>Reply</b> karke <code>/status</code> likhein!", parse_mode="HTML")
         return
-    
     if did in DEALS_DB:
         d = DEALS_DB[did]
         amt_disp = f"₹{d.get('amount', 0.0):,.0f}" if d.get('amount', 0.0) > 0 else "Deal Amount"
@@ -367,10 +367,10 @@ async def stats_cmd(u: Update, c: ContextTypes.DEFAULT_TYPE):
     await u.message.reply_text(f"📈 <b>@CHIKUESCROWSERVICE STATS</b>\n━━━━━━━━━━━━━━━━━━━\n🤝 <b>Total Deals:</b> {STATS['total_deals']}\n💼 <b>Total Volume:</b> ₹{STATS['total_volume']:,.2f}\n💵 <b>Total Fees:</b> ₹{STATS['total_fees']:,.2f}", parse_mode="HTML")
 
 async def admin_hold_cmd(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    if u.effective_user.id != OWNER_ID: 
+    if u.effective_user.id != OWNER_ID:
         return
     hd = {k: v for k, v in DEALS_DB.items() if v["status"] in ["ACTIVE", "ON HOLD"]}
-    if not hd: 
+    if not hd:
         await u.message.reply_text("🛡️ <b>ADMIN HOLD</b>\n\nAbhi koi active hold deal nahi hai.", parse_mode="HTML")
         return
     ag, gtot = {}, 0.0
@@ -389,29 +389,30 @@ async def admin_hold_cmd(u: Update, c: ContextTypes.DEFAULT_TYPE):
 
 async def purge_pinned_service_msg(u: Update, c: ContextTypes.DEFAULT_TYPE):
     try:
-        if u.message and u.message.pinned_message: 
+        if u.message and u.message.pinned_message:
             await u.message.delete()
-    except: 
+    except:
         pass
 
 async def handle_edited_msg(u: Update, c: ContextTypes.DEFAULT_TYPE):
     em = u.edited_message
-    if not em or not em.from_user or em.from_user.id == OWNER_ID: 
+    if not em or not em.from_user or em.from_user.id == OWNER_ID:
         return
     try:
-        if any(a.user.id == em.from_user.id for a in await c.bot.get_chat_administrators(em.chat_id)): 
+        if any(a.user.id == em.from_user.id for a in await c.bot.get_chat_administrators(em.chat_id)):
             return
-    except: 
+    except:
         pass
     try:
         await em.delete()
         await c.bot.send_message(chat_id=em.chat_id, text=f"⚠️ {em.from_user.mention_html()} <b>EDITED FORM/MESSAGE NOT ALLOWED ⚠️</b>", parse_mode="HTML")
-    except: 
+    except:
         pass
 
 async def handle_txt(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    if not u.message or not u.message.text: 
+    if not u.message or not u.message.text:
         return
     t = u.message.text.strip().lower()
-    if t in ["form", ".form"]: 
-      
+    if t in ["form", ".form"]:
+        await form(u, c)
+    elif t in ["fees", "fee", ".fee", ".
