@@ -21,6 +21,8 @@ async def is_admin(u: Update, c: ContextTypes.DEFAULT_TYPE):
         return False
     if u.effective_user.id == OWNER_ID:
         return True
+    if u.effective_chat.type == "private":
+        return True
     try:
         admins = await c.bot.get_chat_administrators(u.effective_chat.id)
         return any(a.user.id == u.effective_user.id for a in admins)
@@ -61,7 +63,6 @@ def parse_escrow_form(raw):
         return data
 
     cleaned_full = normalize_text(raw)
-
     m_id = re.search(r"dl[-_ ]*chiku[-_ ]*\d+", cleaned_full)
     if m_id:
         data["id"] = re.sub(r"\s+", "", m_id.group(0).upper().replace("_", "-"))
@@ -393,7 +394,7 @@ async def cmd_adminhold(u: Update, c: ContextTypes.DEFAULT_TYPE):
         return
     hd = {k: v for k, v in DEALS_DB.items() if v.get("status") in ["ACTIVE", "ON HOLD"]}
     if not hd:
-        await u.message.reply_text("🛡️ <b>ADMIN HOLD</b>\n\nAbhi koi active hold deal nahi hai.", parse_mode="HTML")
+        await u.message.reply_text("🛡️ <b>ADMIN HOLD STATUS</b>\n━━━━━━━━━━━━━━━━━━━\nAbhi koi active hold deal nahi hai.", parse_mode="HTML")
         return
 
     ag, gtot = {}, 0.0
@@ -418,11 +419,13 @@ async def cmd_adminhold(u: Update, c: ContextTypes.DEFAULT_TYPE):
     await u.message.reply_text("\n".join(out), parse_mode="HTML")
 
 async def cmd_stats(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    # Stats is public - koi bhi dekh sakta hai
     await u.message.reply_text(
         f"📈 <b>@CHIKUESCROWSERVICE STATS</b>\n━━━━━━━━━━━━━━━━━━━\n"
         f"🤝 <b>Total Deals:</b> {STATS['deals']}\n"
         f"💼 <b>Total Volume:</b> ₹{STATS['vol']:,.2f}\n"
-        f"💵 <b>Total Fees:</b> ₹{STATS['fees']:,.2f}",
+        f"💵 <b>Total Fees:</b> ₹{STATS['fees']:,.2f}\n"
+        f"📱 <b>RG :</b> @CHIKUNXT",
         parse_mode="HTML"
     )
 
@@ -453,10 +456,15 @@ async def text_router(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not u.message or not u.message.text:
         return
     t = u.message.text.strip().lower()
+    
     if t in ["form", ".form"]:
         await cmd_form(u, c)
     elif t in ["fee", "fees", ".fee", ".fees"]:
         await cmd_fee(u, c)
+    elif t in ["stats", ".stats", "/stats"]:
+        await cmd_stats(u, c)
+    elif t in ["adminhold", ".adminhold", "/adminhold"]:
+        await cmd_adminhold(u, c)
     elif t in [
         "received", ".received",
         "recieved", ".recieved",
@@ -464,8 +472,7 @@ async def text_router(u: Update, c: ContextTypes.DEFAULT_TYPE):
         "recive", ".recive"
     ]:
         await cmd_received(u, c)
-    elif t in ["adminhold", ".adminhold"]:
-        await cmd_adminhold(u, c)
+        
     m = re.match(r"^(?:fee|fees|\.fee|\.fees|\/fee|\/fees)\s+([^\s]+)", t)
     if m:
         clean_num = re.sub(r'[^\d\.]', '', m.group(1))
@@ -477,17 +484,19 @@ def main():
     threading.Thread(target=run_web, daemon=True).start()
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     
+    # Core handlers
     app.add_handler(CommandHandler("form", cmd_form))
     app.add_handler(CommandHandler("fee", cmd_fee))
     app.add_handler(CommandHandler("fees", cmd_fee))
     app.add_handler(CommandHandler("deal", cmd_deal))
     
-    # All spellings for /received command
+    # Received handlers
     app.add_handler(CommandHandler("received", cmd_received))
     app.add_handler(CommandHandler("recieved", cmd_received))
     app.add_handler(CommandHandler("receive", cmd_received))
     app.add_handler(CommandHandler("recive", cmd_received))
     
+    # Management handlers
     app.add_handler(CommandHandler("close", cmd_close))
     app.add_handler(CommandHandler("cancel", cmd_cancel))
     app.add_handler(CommandHandler("hold", cmd_hold))
@@ -501,4 +510,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-    
+                                                      
