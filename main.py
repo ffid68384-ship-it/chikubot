@@ -24,9 +24,7 @@ def db_run(q, p=(), fetch=None):
 db_run('CREATE TABLE IF NOT EXISTS deals (did TEXT PRIMARY KEY, status TEXT, seller TEXT, buyer TEXT, amt REAL, fee REAL, escrower TEXT, msg_id INTEGER)')
 db_run('CREATE TABLE IF NOT EXISTS stats (id INTEGER PRIMARY KEY, deals INTEGER, vol REAL, fees REAL)')
 db_run('CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v INTEGER)')
-# Aaj ke stats yahan set kar diye hain (11 Deals, 9705 Rs Volume)
 db_run('INSERT OR IGNORE INTO stats VALUES (1, 11, 9705.0, 350.0)')
-# Next deal ID DL-CHIKU-11257 se shuru hogi
 db_run('INSERT OR IGNORE INTO meta VALUES ("ctr", 11257)')
 
 def get_next_did():
@@ -59,7 +57,7 @@ def calc_fee(amt):
     return f, "3%", f"3% - {round(f)}₹", amt - f
 
 def parse_form(raw):
-    d = {"seller": "", "buyer": "", "details": "", "amount": 0.0, "till": "", "id": ""}
+    d = {"seller": "N/A", "buyer": "N/A", "details": "N/A", "amount": 0.0, "till": "SECURE", "id": ""}
     if not raw: return d
     cf = clean_txt(raw)
     m_id = re.search(r"dl[-_ ]*chiku[-_ ]*(\d+)", cf, re.I)
@@ -69,15 +67,16 @@ def parse_form(raw):
         if not c.strip(): continue
         val = r.split(':', 1)[1].strip() if ':' in r else (r.split('-', 1)[1].strip() if '-' in r else "")
         lbl = re.sub(r'^[•\*\-\s]+', '', c.split(':', 1)[0] if ':' in c else c.split('-', 1)[0]).strip()
-        if (lbl in ['seller', 's'] or lbl.endswith(' seller')) and not d['seller']: d['seller'] = val
-        elif (lbl in ['buyer', 'b'] or lbl.endswith(' buyer')) and not d['buyer']: d['buyer'] = val
-        elif 'detail' in lbl and not d['details']:
-            d['details'] = val
-            if i + 1 < len(rl) and cl[i+1].strip() and not any(k in cl[i+1] for k in ['•','*','-',':','amount','amt','till','escrow']): d['details'] += " " + rl[i+1].strip()
-        elif any(k in lbl for k in ['amount', 'amt', 'price', 'cost']) and d['amount'] == 0.0:
+        if (lbl in ['seller', 's'] or lbl.endswith(' seller')) and val: d['seller'] = val
+        elif (lbl in ['buyer', 'b'] or lbl.endswith(' buyer')) and val: d['buyer'] = val
+        elif 'detail' in lbl:
+            if val: d['details'] = val
+            if i + 1 < len(rl) and cl[i+1].strip() and not any(k in cl[i+1] for k in ['•','*','-',':','amount','amt','till','escrow']): 
+                d['details'] += " " + rl[i+1].strip()
+        elif any(k in lbl for k in ['amount', 'amt', 'price', 'cost']):
             m = re.search(r'(\d+(?:\.\d+)?)', clean_txt(val).replace(',', ''))
             if m: d['amount'] = float(m.group(1))
-        elif 'till' in lbl and not d['till']: d['till'] = val
+        elif 'till' in lbl and val: d['till'] = val
     if d['amount'] == 0.0:
         no_u = re.sub(r'@\w+', '', cf).replace(',', '')
         m_amt = re.search(r'(?:amount|amt|price)[\s\:\-]*[₹rs\s]*(\d+(?:\.\d+)?)', no_u) or re.search(r'[₹rs]\s*(\d+(?:\.\d+)?)', no_u)
@@ -85,7 +84,7 @@ def parse_form(raw):
     return d
 
 async def resolve_u(u, rep, ctx, cid):
-    if not u or u.upper() == "N/A": return u or "N/A"
+    if not u or u.upper() == "N/A": return "N/A"
     clean = u.strip()
     if clean.isdigit(): return f'<a href="tg://user?id={clean}">{clean}</a> ({clean})'
     if clean.startswith("@"): return clean
@@ -101,7 +100,18 @@ async def send_c(u: Update, amt: float):
     await u.message.reply_text(f"📊 <b>@CHIKUESCROWSERVICE FEE CALCULATOR</b>\n━━━━━━━━━━━━━━━━━━━\n💰 <b>Deal Amount:</b> ₹{amt:,.0f}\n⚡ <b>Fee Rate:</b> {rate}\n💵 <b>Escrow Fee:</b> ₹{fee:,.0f}\n━━━━━━━━━━━━━━━━━━━\n✅ <b>Seller Receives:</b> ₹{rcv:,.0f}\n\n📱 <b>RG :</b> @CHIKUNXT", parse_mode="HTML")
 
 async def cmd_form(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    await u.message.reply_text("<b>ESCROW DEAL FORM</b>\n\n• <b>SELLER :</b> \n\n• <b>BUYER :</b> \n\n• <b>DEAL DETAILS :</b> \n\n• <b>DEAL AMOUNT :</b> \n\n• <b>ESCROW TILL :</b> \n\n• <b>FOR RELEASE SELLER UPI :</b> \n\n⚠️ <b>ESCROW FEES IS NON - REFUNDABLE NO MATTER IF THE DEAL GETS CANCELLED</b> ⚠️", parse_mode="HTML")
+    form_msg = (
+        "<b>ᴇꜱᴄʀᴏᴡ ᴅᴇᴀʟ ғᴏʀᴍ</b>\n\n"
+        "• <b>ꜱᴇʟʟᴇʀ :</b> \n\n"
+        "• <b>ʙᴜʏᴇʀ :</b> \n\n"
+        "• <b>ᴅᴇᴀʟ ᴅᴇᴀᴛᴀɪʟꜱ :</b> \n\n"
+        "• <b>ᴅᴇᴀʟ ᴀᴍᴏᴜɴᴛ :</b> \n\n"
+        "• <b>ᴇꜱᴄʀᴏᴡ ᴛɪʟʟ :</b> \n\n"
+        "• <b>ғᴏʀ ʀᴇʟᴇᴀꜱᴇ ꜱᴇʟʟᴇʀ ᴜᴘɪ :</b> \n\n"
+        "<b>ғᴏʀ ᴍᴏʀᴇ ᴘʀᴏᴏꜰꜱ ᴄʜᴇᴄᴋ ɢʀᴏᴜᴘ ᴘɪɴ ᴍᴇꜱꜱᴀɢᴇꜱ..</b>\n\n"
+        "⚠️ <b>ESCROW FEES IS NON - REFUNDABLE NO MATTER IF THE DEAL GETS CANCELLED</b> ⚠️"
+    )
+    await u.message.reply_text(form_msg, parse_mode="HTML")
 
 async def cmd_fee(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not c.args:
@@ -123,12 +133,12 @@ async def cmd_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if c.args:
         n = re.sub(r'[^\d\.]', '', c.args[0])
         if n: f["amount"] = float(n)
-    seller = await resolve_u(f["seller"] or "N/A", rep, c, u.effective_chat.id)
-    buyer = await resolve_u(f["buyer"] or "N/A", rep, c, u.effective_chat.id)
+    seller = await resolve_u(f["seller"], rep, c, u.effective_chat.id)
+    buyer = await resolve_u(f["buyer"], rep, c, u.effective_chat.id)
     amt, did, eu = f["amount"], get_next_did(), u.effective_user
     fee_val, _, fee_tag, _ = calc_fee(amt)
     esc_tag = (f"@{eu.username}" if eu.username else eu.first_name) if eu else "Admin"
-    msg = f"<b>ESCROW DEAL</b>\n🪪 <b>DEAL ID:</b> {did}\n\n• <b>SELLER :</b> {seller}\n• <b>BUYER  :</b> {buyer}\n\n• <b>DEAL DETAILS :</b> {f['details'] or 'N/A'}\n• <b>DEAL AMOUNT :</b> ₹{amt:,.0f}\n• <b>ESCROW TILL :</b> {f['till'] or 'SECURE'}\n\n<b>Escrower :</b> {esc_tag}\n\nFees {fee_tag}"
+    msg = f"<b>ESCROW DEAL</b>\n🪪 <b>DEAL ID:</b> {did}\n\n• <b>SELLER :</b> {seller}\n• <b>BUYER  :</b> {buyer}\n\n• <b>DEAL DETAILS :</b> {f['details']}\n• <b>DEAL AMOUNT :</b> ₹{amt:,.0f}\n• <b>ESCROW TILL :</b> {f['till']}\n\n<b>Escrower :</b> {esc_tag}\n\nFees {fee_tag}"
     sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=msg, parse_mode="HTML")
     try:
         await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
@@ -145,7 +155,7 @@ async def cmd_received(u: Update, c: ContextTypes.DEFAULT_TYPE):
         did = f["id"]
         row = db_run('SELECT amt, seller, buyer FROM deals WHERE did = ?', (did,), "one") if did else None
         amt = f["amount"] if f["amount"] > 0 else (row[0] if row else 0.0)
-        seller, buyer = f["seller"] or (row[1] if row else ""), f["buyer"] or (row[2] if row else "")
+        seller, buyer = (f["seller"] if f["seller"] != "N/A" else "") or (row[1] if row else ""), (f["buyer"] if f["buyer"] != "N/A" else "") or (row[2] if row else "")
     if not did:
         row = db_run('SELECT did, amt, seller, buyer FROM deals ORDER BY ROWID DESC LIMIT 1', fetch="one")
         if row: did, amt, seller, buyer = row[0], (amt or row[1]), (seller or row[2]), (buyer or row[3])
@@ -164,7 +174,7 @@ async def cmd_close(u: Update, c: ContextTypes.DEFAULT_TYPE):
         did, amt, seller, buyer = f["id"], f["amount"], f["seller"], f["buyer"]
         row = db_run('SELECT amt, seller, buyer, msg_id FROM deals WHERE did = ?', (did,), "one") if did else None
         if row:
-            r_mid, amt, seller, buyer = row[3] or r_mid, (amt if amt > 0 else row[0]), (seller or row[1]), (buyer or row[2])
+            r_mid, amt, seller, buyer = row[3] or r_mid, (amt if amt > 0 else row[0]), (seller if seller != "N/A" else row[1]), (buyer if buyer != "N/A" else row[2])
     if not did:
         row = db_run('SELECT did, amt, seller, buyer, msg_id FROM deals ORDER BY ROWID DESC LIMIT 1', fetch="one")
         if row: did, amt, seller, buyer, r_mid = row[0], (amt or row[1]), (seller or row[2]), (buyer or row[3]), row[4]
@@ -295,3 +305,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+    
