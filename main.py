@@ -69,7 +69,6 @@ def parse_escrow_form(raw):
     raw_lines = raw.split('\n')
     clean_lines = cleaned_full.split('\n')
 
-    # Line by Line dual scanning (Preserves Original Usernames & Strips Font Mismatch)
     for i, (r_line, c_line) in enumerate(zip(raw_lines, clean_lines)):
         c_str = c_line.strip()
         if not c_str:
@@ -97,7 +96,6 @@ def parse_escrow_form(raw):
         # Deal Details
         elif any(k in label for k in ['detail', 'deatail']) and not data['details']:
             data['details'] = val
-            # Attach multiline continuation if present
             if i + 1 < len(raw_lines):
                 nxt = clean_lines[i+1].strip()
                 if nxt and not any(k in nxt for k in ['•', '*', '-', ':', 'amount', 'amt', 'till', 'escrow', 'seller', 'buyer', 'for ']):
@@ -111,7 +109,7 @@ def parse_escrow_form(raw):
         elif 'till' in label and not data['till']:
             data['till'] = val
 
-    # Direct Fallbacks if somehow missing
+    # Direct Fallbacks if missing
     if data['amount'] == 0.0:
         no_users = re.sub(r'@\w+', '', cleaned_full).replace(',', '')
         m_amt = re.search(r'(?:amount|amt|price)[\s\:\-]*[₹rs\s]*(\d+(?:\.\d+)?)', no_users)
@@ -249,7 +247,7 @@ async def cmd_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     DEALS_DB[did] = {"status": "ACTIVE", "seller": seller, "buyer": buyer, "amount": amt, "fee": fee_val, "escrower": (f"@{eu.username}" if eu.username else eu.first_name), "details": dtl, "msg_id": sm.message_id}
 
 async def cmd_received(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    await del_msg(u)
+    # auto-delete remove kar diya gaya hai yahan se
     if not await is_admin(u, c):
         return
     cid = u.effective_chat.id
@@ -433,4 +431,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-    
+                          
