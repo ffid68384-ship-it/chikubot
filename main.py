@@ -8,7 +8,7 @@ web_app = Flask(__name__)
 def home(): return "Chiku Escrow 24/7"
 def run_web(): web_app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
 
-BOT_TOKEN, OWNER_ID, PROOF_CHANNEL = "8938665546:AAFz121wlq59_UvVIAWlapHfh58q_Uq7b1E", 7364435907, ""
+BOT_TOKEN, OWNER_ID, PROOF_CHANNEL = "8938665546:AAH-1KMv8sD33fEXGPGYWmLkA9ZYIxfKJ8I", 7364435907, ""
 DEALS_DB, STATS = {}, {"total_deals": 0, "total_volume": 0.0, "total_fees": 0.0}
 DEAL_COUNTER, LATEST_ACTIVE_DEAL, LATEST_PINNED_MSG_ID = 1, None, None
 
@@ -287,4 +287,3 @@ if __name__ == '__main__':
     app.add_handler(MessageHandler(filters.UpdateType.EDITED_MESSAGE, handle_edited_msg))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_txt))
     app.run_polling(drop_pending_updates=True)
-    
