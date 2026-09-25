@@ -180,6 +180,7 @@ async def cmd_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     )
     sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=msg, parse_mode="HTML")
     try:
+        # Added disable_notification=True here
         await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
         LAST_PIN = sm.message_id
     except: pass
@@ -273,6 +274,7 @@ async def cmd_close(u: Update, c: ContextTypes.DEFAULT_TYPE):
     )
     sm = await c.bot.send_message(chat_id=cid, text=txt, parse_mode="HTML")
     try:
+        # Added disable_notification=True here
         await c.bot.pin_chat_message(chat_id=cid, message_id=sm.message_id, disable_notification=True)
         LAST_PIN = sm.message_id
     except: pass
@@ -289,6 +291,7 @@ async def cmd_cancel(u: Update, c: ContextTypes.DEFAULT_TYPE):
 
     sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=f"❌ <b>DEAL CANCELLED</b>\n🪪 <b>ID:</b> {did}\n👤 <b>By:</b> {u.effective_user.mention_html()}", parse_mode="HTML")
     try:
+        # Added disable_notification=True here
         await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
         LAST_PIN = sm.message_id
     except: pass
@@ -333,6 +336,7 @@ async def cmd_refund(u: Update, c: ContextTypes.DEFAULT_TYPE):
     )
     sm = await c.bot.send_message(chat_id=cid, text=txt, parse_mode="HTML")
     try:
+        # Added disable_notification=True here
         await c.bot.pin_chat_message(chat_id=cid, message_id=sm.message_id, disable_notification=True)
         LAST_PIN = sm.message_id
     except: pass
@@ -351,6 +355,7 @@ async def cmd_hold(u: Update, c: ContextTypes.DEFAULT_TYPE):
 
     sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=f"⏳ <b>DEAL ON HOLD</b>\n━━━━━━━━━━━━━━━━━━━\n🪪 <b>Deal ID:</b> {did}\n⚠️ <b>Reason:</b> {rsn}\n👤 <b>Action By:</b> {u.effective_user.mention_html()}\n\n🔒 <i>Release is paused.</i>", parse_mode="HTML")
     try:
+        # Added disable_notification=True here
         await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
         LAST_PIN = sm.message_id
     except: pass
@@ -380,7 +385,6 @@ async def cmd_adminhold(u: Update, c: ContextTypes.DEFAULT_TYPE):
     await u.message.reply_text("\n".join(out), parse_mode="HTML")
 
 async def cmd_stats(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    # Koi bhi check nahi - Sabhi ke liye open
     await u.message.reply_text(
         f"📈 <b>@CHIKUESCROWSERVICE STATS</b>\n━━━━━━━━━━━━━━━━━━━\n"
         f"🤝 <b>Total Deals:</b> {STATS['deals']}\n"
@@ -439,4 +443,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-            
+        
