@@ -17,13 +17,15 @@ DEALS_DB, STATS = {}, {"deals": 0, "vol": 0.0, "fees": 0.0}
 DEAL_CTR, CURR_DEAL, LAST_PIN = 11244, None, None
 
 async def is_admin(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    if not u.effective_user:
+        return False
     if u.effective_user.id == OWNER_ID:
         return True
     try:
         admins = await c.bot.get_chat_administrators(u.effective_chat.id)
         return any(a.user.id == u.effective_user.id for a in admins)
-    except:
-        return False
+    except Exception:
+        return True
 
 UNICODE_MAP = {
     'ɢ':'g', 'ɪ':'i', 'ɴ':'n', 'ʀ':'r', 'ʏ':'y', 'ʙ':'b', 'ʜ':'h', 'ʟ':'l', 'ꜱ':'s',
@@ -251,7 +253,6 @@ async def cmd_received(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if rep and (rep.text or rep.caption):
         f = parse_escrow_form(rep.text or rep.caption)
         did = f["id"]
-        # Always prioritize text from the replied message
         amt = f["amount"] if f["amount"] > 0 else (DEALS_DB.get(did, {}).get("amount", 0.0) if did in DEALS_DB else 0.0)
         seller = f["seller"] if f["seller"] else (DEALS_DB.get(did, {}).get("seller", "") if did in DEALS_DB else "")
         buyer = f["buyer"] if f["buyer"] else (DEALS_DB.get(did, {}).get("buyer", "") if did in DEALS_DB else "")
@@ -287,26 +288,21 @@ async def cmd_close(u: Update, c: ContextTypes.DEFAULT_TYPE):
     rep = u.message.reply_to_message
     did, amt, seller, buyer, r_mid = None, 0.0, "", "", None
 
-    # Priority 1: DIRECTLY read the exact deal slip text being replied to!
     if rep and (rep.text or rep.caption):
         r_mid = rep.message_id
         raw_msg = rep.text or rep.caption
         f = parse_escrow_form(raw_msg)
         did = f["id"]
-        
-        # Read directly from replied slip!
         amt = f["amount"]
         seller = f["seller"]
         buyer = f["buyer"]
 
-        # Only fallback to DB if fields were missing on the slip
         if did and did in DEALS_DB:
             r_mid = DEALS_DB[did].get("msg_id", r_mid)
             if amt == 0.0: amt = DEALS_DB[did].get("amount", 0.0)
             if not seller: seller = DEALS_DB[did].get("seller", "")
             if not buyer: buyer = DEALS_DB[did].get("buyer", "")
 
-    # Priority 2: Fallback to active deal if not replied
     if not did and CURR_DEAL and CURR_DEAL in DEALS_DB:
         did = CURR_DEAL
         if amt == 0.0: amt = DEALS_DB[did]["amount"]
@@ -314,7 +310,6 @@ async def cmd_close(u: Update, c: ContextTypes.DEFAULT_TYPE):
         if not buyer: buyer = DEALS_DB[did]["buyer"]
         r_mid = DEALS_DB[did].get("msg_id")
 
-    # Priority 3: Manual amount command override (e.g. /close 550)
     if c.args:
         num = re.sub(r'[^\d\.]', '', c.args[0])
         if num and float(num) > 0:
@@ -462,7 +457,12 @@ async def text_router(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await cmd_form(u, c)
     elif t in ["fee", "fees", ".fee", ".fees"]:
         await cmd_fee(u, c)
-    elif t in ["received", ".received"]:
+    elif t in [
+        "received", ".received",
+        "recieved", ".recieved",
+        "receive", ".receive",
+        "recive", ".recive"
+    ]:
         await cmd_received(u, c)
     elif t in ["adminhold", ".adminhold"]:
         await cmd_adminhold(u, c)
@@ -481,7 +481,13 @@ def main():
     app.add_handler(CommandHandler("fee", cmd_fee))
     app.add_handler(CommandHandler("fees", cmd_fee))
     app.add_handler(CommandHandler("deal", cmd_deal))
+    
+    # All spellings for /received command
     app.add_handler(CommandHandler("received", cmd_received))
+    app.add_handler(CommandHandler("recieved", cmd_received))
+    app.add_handler(CommandHandler("receive", cmd_received))
+    app.add_handler(CommandHandler("recive", cmd_received))
+    
     app.add_handler(CommandHandler("close", cmd_close))
     app.add_handler(CommandHandler("cancel", cmd_cancel))
     app.add_handler(CommandHandler("hold", cmd_hold))
@@ -495,3 +501,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+    
