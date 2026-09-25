@@ -83,7 +83,18 @@ async def send_fee_result(u: Update, amt: float):
     await u.message.reply_text(f"📊 <b>@CHIKUESCROWSERVICE FEE CALCULATOR</b>\n━━━━━━━━━━━━━━━━━━━\n💰 <b>Deal Amount:</b> ₹{amt:,.0f}\n⚡ <b>Fee Rate:</b> {r}\n💵 <b>Escrow Fee:</b> ₹{f:,.0f}\n━━━━━━━━━━━━━━━━━━━\n✅ <b>Seller Receives:</b> ₹{rcv:,.0f}\n\n📱 <b>RG :</b> @CHIKUNXT", parse_mode="HTML")
 
 async def form(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    await u.message.reply_text("📋 <b>𝗘𝗦𝗖𝗥𝗢𝗪 𝗗𝗘𝗔𝗟 𝗙𝗢𝗥𝗠</b>\n\n• <b>𝗦𝗘𝗟𝗟𝗘𝗥 :</b> \n\n• <b>𝗕𝗨𝗬𝗘𝗥 :</b> \n\n• <b>𝗗𝗘𝗔𝗟 𝗗𝗘𝗧𝗔𝗜𝗟𝗦 :</b> \n\n• <b>𝗗𝗘𝗔𝗟 𝗔𝗠𝗢𝗨𝗡𝗧 :</b> \n\n• <b>𝗘𝗦𝗖𝗥𝗢𝗪 𝗧𝗜𝗟𝗟 :</b> \n\n• <b>𝗙𝗢𝗥 𝗥𝗘𝗟𝗘𝗔𝗦𝗘 𝗦𝗘𝗟𝗟𝗘𝗥 𝗨𝗣𝗜 :</b> \n__________________________________\n\n<i>𝗙𝗢𝗥 𝗠𝗢𝗥𝗘 𝗣𝗥𝗢𝗢𝗙𝗦 𝗖𝗛𝗘𝗖𝗞 𝗚𝗥𝗢𝗨𝗣 𝗣𝗜𝗡 𝗠𝗘𝗦𝗦𝗔𝗚𝗘𝗦..</i>\n\n⚠️ <b>𝗘𝗦𝗖𝗥𝗢𝗪 𝗙𝗘𝗘𝗦 𝗜𝗦 𝗡𝗢𝗡-𝗥𝗘𝗙𝗨𝗡𝗗𝗔𝗕𝗟𝗘 𝗡𝗢 𝗠𝗔𝗧𝗧𝗘𝗥 𝗜𝗙 𝗧𝗛𝗘 𝗗𝗘𝗔𝗟 𝗚𝗘𝗧𝗦 𝗖𝗔𝗡𝗖𝗘𝗟𝗟𝗘𝗗</b> ⚠️", parse_mode="HTML")
+    msg = (
+        "<b>ᴇꜱᴄʀᴏᴡ ᴅᴇᴀʟ ғᴏʀᴍ</b>\n\n"
+        "• <b>ꜱᴇʟʟᴇʀ :</b> \n\n"
+        "• <b>ʙᴜʏᴇʀ :</b> \n\n"
+        "• <b>ᴅᴇᴀʟ ᴅᴇᴀᴛᴀɪʟꜱ :</b> \n\n"
+        "• <b>ᴅᴇᴀʟ ᴀᴍᴏᴜɴᴛ :</b> \n\n"
+        "• <b>ᴇꜱᴄʀᴏᴡ ᴛɪʟʟ :</b> \n\n"
+        "• <b>ғᴏʀ ʀᴇʟᴇᴀsᴇ sᴇʟʟᴇʀ ᴜᴘɪ :</b> \n\n"
+        "<i>ғᴏʀ ᴍᴏʀᴇ ᴘʀᴏᴏғs ᴄʜᴇᴄᴋ ɢʀᴏᴜᴘ ᴘɪɴ ᴍᴇssᴀɢᴇs..</i>\n\n"
+        "⚠️ <b>ESCROW FEES IS NON - REFUNDABLE NO MATTER IF THE DEAL GETS CANCELLED</b> ⚠️"
+    )
+    await u.message.reply_text(msg, parse_mode="HTML")
 
 async def fee_command(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not c.args:
