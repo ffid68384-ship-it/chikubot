@@ -65,6 +65,7 @@ def get_amt(val):
 def parse_form(raw):
     data = {"seller": "", "buyer": "", "details": "", "amount": "", "till": "", "id": ""}
     norm_full = clean_txt(raw)
+    
     dm = re.search(r"DL[-_ ]*CHIKU[-_ ]*\d+", norm_full, re.I)
     if dm:
         data["id"] = re.sub(r"\s+", "", dm.group(0).upper().replace("_", "-"))
@@ -75,22 +76,26 @@ def parse_form(raw):
         if not cleaned_line:
             continue
         
-        # Split key & value from colon
-        if ":" in line or "-" in line:
-            val = re.split(r"[:\-]", line, 1)[-1].strip()
-        else:
-            val = ""
+        parts = re.split(r"[:\-]", line, 1)
+        val = parts[1].strip() if len(parts) > 1 else ""
 
         if "seller" in cleaned_line and not data["seller"]:
             data["seller"] = val
         elif "buyer" in cleaned_line and not data["buyer"]:
             data["buyer"] = val
-        elif any(x in cleaned_line for x in ["details", "deatails", "detail"]) and not data["details"]:
+        elif any(k in cleaned_line for k in ["details", "deatails", "detail"]) and not data["details"]:
             data["details"] = val
-        elif any(x in cleaned_line for x in ["amount", "amt", "price"]) and not data["amount"]:
-            data["amount"] = val
+        elif any(k in cleaned_line for k in ["amount", "amt", "price"]) and not data["amount"]:
+            # Pehle colon ke baad se uthao, agar khali ho toh cleaned_line se
+            data["amount"] = val if val else line.strip()
         elif "till" in cleaned_line and not data["till"]:
             data["till"] = val
+
+    # Fallback: Agar regex miss hua toh pure text se 'amount' dhundo
+    if not data["amount"] or data["amount"] == "N/A":
+        amt_match = re.search(r"(?:amount|amt)[\s\:\-]+([^\n\r]+)", norm_full, re.I)
+        if amt_match:
+            data["amount"] = amt_match.group(1).strip()
 
     return data
 
@@ -189,7 +194,15 @@ async def cmd_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     DEAL_CTR += 1
     CURR_DEAL = did
     eu = u.effective_user
-    amt_lbl = f"₹{amt:,.0f}" if amt > 0 else (f['amount'] if f['amount'] else 'N/A')
+    
+    # Amount formatting fix
+    if amt > 0:
+        amt_lbl = f"₹{amt:,.0f}"
+    elif f['amount']:
+        amt_lbl = f['amount']
+    else:
+        amt_lbl = 'N/A'
+        
     dtl = f['details'] if f['details'] else 'N/A'
     till = f['till'] if f['till'] else 'SECURE'
 
