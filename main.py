@@ -28,7 +28,6 @@ async def is_admin(u: Update, c: ContextTypes.DEFAULT_TYPE):
 def clean_txt(t):
     if not t:
         return ""
-    n = unicodedata.normalize('NFKD', str(t))
     conv = {
         'ꜱ':'s','s':'s','ᴇ':'e','e':'e','ʟ':'l','l':'l','ʀ':'r','r':'r',
         'ʙ':'b','b':'b','ᴜ':'u','u':'u','ʏ':'y','y':'y','ᴅ':'d','d':'d',
@@ -36,7 +35,10 @@ def clean_txt(t):
         'ᴡ':'w','w':'w','м':'m','m':'m','ɴ':'n','n':'n','ᴄ':'c','c':'c',
         'ʜ':'h','h':'h','ᴋ':'k','k':'k','ᴘ':'p','p':'p','ғ':'f','f':'f'
     }
-    return "".join(conv.get(ch, ch) for ch in n)
+    res = []
+    for ch in unicodedata.normalize('NFKD', str(t)):
+        res.append(conv.get(ch, ch))
+    return "".join(res)
 
 def calc_fee(amt):
     if amt <= 0:
@@ -69,19 +71,26 @@ def parse_form(raw):
 
     lines = raw.split("\n")
     for line in lines:
-        cleaned_line = clean_txt(line).strip()
+        cleaned_line = clean_txt(line).strip().lower()
         if not cleaned_line:
             continue
-        if re.search(r"(?:^|[•\*\-\s])seller\s*[:\-]", cleaned_line, re.I):
-            data["seller"] = re.split(r"[:\-]", line, 1)[-1].strip()
-        elif re.search(r"(?:^|[•\*\-\s])buyer\s*[:\-]", cleaned_line, re.I):
-            data["buyer"] = re.split(r"[:\-]", line, 1)[-1].strip()
-        elif re.search(r"(?:^|[•\*\-\s])(?:deal\s*)?(?:details|deatails|detail)\s*[:\-]", cleaned_line, re.I):
-            data["details"] = re.split(r"[:\-]", line, 1)[-1].strip()
-        elif re.search(r"(?:^|[•\*\-\s])(?:deal\s*)?(?:amount|amt|price|cost)\s*[:\-]", cleaned_line, re.I):
-            data["amount"] = re.split(r"[:\-]", line, 1)[-1].strip()
-        elif re.search(r"(?:^|[•\*\-\s])(?:escrow\s*)?till\s*[:\-]", cleaned_line, re.I):
-            data["till"] = re.split(r"[:\-]", line, 1)[-1].strip()
+        
+        # Split key & value from colon
+        if ":" in line or "-" in line:
+            val = re.split(r"[:\-]", line, 1)[-1].strip()
+        else:
+            val = ""
+
+        if "seller" in cleaned_line and not data["seller"]:
+            data["seller"] = val
+        elif "buyer" in cleaned_line and not data["buyer"]:
+            data["buyer"] = val
+        elif any(x in cleaned_line for x in ["details", "deatails", "detail"]) and not data["details"]:
+            data["details"] = val
+        elif any(x in cleaned_line for x in ["amount", "amt", "price"]) and not data["amount"]:
+            data["amount"] = val
+        elif "till" in cleaned_line and not data["till"]:
+            data["till"] = val
 
     return data
 
@@ -168,9 +177,11 @@ async def cmd_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await c.bot.unpin_chat_message(chat_id=u.effective_chat.id, message_id=rep.message_id)
     except:
         pass
+    
     f = parse_form(rep.text or rep.caption)
     seller = await resolve_user(f["seller"] or "N/A", rep, c, u.effective_chat.id)
     buyer = await resolve_user(f["buyer"] or "N/A", rep, c, u.effective_chat.id)
+    
     amt = get_amt(f["amount"])
     fee_val, _, fee_tag, _ = calc_fee(amt)
     fee_line = f"\n\nFees {fee_tag}" if amt > 0 else ""
