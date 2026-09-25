@@ -14,7 +14,7 @@ def run_web():
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8938665546:AAH-1KMv8sD33fEXGPGYWmLkA9ZYIxfKJ8I")
 OWNER_ID = 7364435907
 DEALS_DB, STATS = {}, {"deals": 0, "vol": 0.0, "fees": 0.0}
-DEAL_CTR, CURR_DEAL, LAST_PIN = 1, None, None
+DEAL_CTR, CURR_DEAL, LAST_PIN = 11244, None, None
 
 async def is_admin(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if u.effective_user.id == OWNER_ID:
@@ -224,7 +224,7 @@ async def cmd_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     amt = f["amount"]
     fee_val, _, fee_tag, _ = calc_fee(amt)
     fee_line = f"\n\nFees {fee_tag}" if amt > 0 else ""
-    did = f"DL-CHIKU-{DEAL_CTR:02d}"
+    did = f"DL-CHIKU-{DEAL_CTR}"
     DEAL_CTR += 1
     CURR_DEAL = did
     eu = u.effective_user
@@ -274,7 +274,7 @@ async def cmd_received(u: Update, c: ContextTypes.DEFAULT_TYPE):
         seller = DEALS_DB[did]["seller"]
         buyer = DEALS_DB[did]["buyer"]
 
-    did = did or "DL-CHIKU-01"
+    did = did or f"DL-CHIKU-{DEAL_CTR}"
     amt_lbl = f"₹{amt:,.0f}" if amt > 0 else "Deal Amount"
     s_tag = seller.split()[0] if seller else "@Seller"
     b_tag = buyer.split()[0] if buyer else "@Buyer"
@@ -326,7 +326,7 @@ async def cmd_close(u: Update, c: ContextTypes.DEFAULT_TYPE):
 
     s_tag = seller.split()[0] if seller else "@Seller"
     b_tag = buyer.split()[0] if buyer else "@Buyer"
-    did = did or "DL-CHIKU-01"
+    did = did or f"DL-CHIKU-{DEAL_CTR}"
     eu = u.effective_user
 
     STATS["deals"] += 1
@@ -359,7 +359,7 @@ async def cmd_cancel(u: Update, c: ContextTypes.DEFAULT_TYPE):
     await del_msg(u)
     if not await is_admin(u, c):
         return
-    did = CURR_DEAL or "DL-CHIKU-01"
+    did = CURR_DEAL or f"DL-CHIKU-{DEAL_CTR}"
     sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=f"❌ <b>DEAL CANCELLED</b>\n🪪 <b>ID:</b> {did}\n👤 <b>By:</b> {u.effective_user.mention_html()}", parse_mode="HTML")
     try:
         await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
@@ -433,4 +433,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-        
+    
