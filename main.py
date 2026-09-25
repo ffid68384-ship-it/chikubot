@@ -15,7 +15,7 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN", "8938665546:AAH-1KMv8sD33fEXGPGYWmLkA9ZY
 OWNER_ID = 7364435907
 DEALS_DB, STATS = {}, {"deals": 0, "vol": 0.0, "fees": 0.0}
 
-# Series fixed to start from 11250
+# Series starts from 11250
 DEAL_CTR, CURR_DEAL, LAST_PIN = 11250, None, None
 
 async def is_admin(u: Update, c: ContextTypes.DEFAULT_TYPE):
@@ -224,7 +224,6 @@ async def cmd_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     fee_val, _, fee_tag, _ = calc_fee(amt)
     fee_line = f"\n\nFees {fee_tag}" if amt > 0 else ""
     
-    # Sequential increment from 11250 onwards
     did = f"DL-CHIKU-{DEAL_CTR}"
     DEAL_CTR += 1
     CURR_DEAL = did
@@ -517,4 +516,5 @@ def main():
     
     app.add_handler(MessageHandler(filters.StatusUpdate.PINNED_MESSAGE, clean_pin_service))
     app.add_handler(MessageHandler(filters.UpdateType.EDITED_MESSAGE, check_edit))
-    app.add_handler(MessageHandler(f
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_router))
+    app.
