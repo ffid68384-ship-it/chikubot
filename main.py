@@ -47,13 +47,13 @@ def parse_amt(val):
 def extract_f(raw):
     n = norm_txt(raw)
     f = {"seller": "", "buyer": "", "details": "", "amount": "", "till": "SECURE", "deal_id": ""}
-    dm = re.search(r"DL[-_]CHIKU[-_]\d+", n, re.I)
-    if dm: f["deal_id"] = dm.group(0).upper().replace("_", "-")
+    dm = re.search(r"DL[-_ ]*CHIKU[-_ ]*\d+", n, re.I)
+    if dm: f["deal_id"] = re.sub(r"\s+", "", dm.group(0).upper().replace("_", "-"))
     sm = re.search(r"seller\s*[:\-]\s*([^\n\r]+)", n, re.I)
     if sm: f["seller"] = sm.group(1).strip()
     bm = re.search(r"buyer\s*[:\-]\s*([^\n\r]+)", n, re.I)
     if bm: f["buyer"] = bm.group(1).strip()
-    am = re.search(r"(?:deal\s*amount|amount)\s*[:\-]\s*([^\n\r]+)", n, re.I)
+    am = re.search(r"(?:deal\s*amount|amount|released)\s*[:\-]\s*([^\n\r]+)", n, re.I)
     if am: f["amount"] = am.group(1).strip()
     dtm = re.search(r"(?:deal\s*details|deal\s*deatails|details)\s*[:\-]\s*([^\n\r]+)", n, re.I)
     if dtm: f["details"] = dtm.group(1).strip()
@@ -154,8 +154,10 @@ async def close_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     STATS["total_deals"] += 1
     STATS["total_volume"] += amt_num
     STATS["total_fees"] += get_fee(amt_num)[0]
-    if did in DEALS_DB: DEALS_DB[did]["status"] = "COMPLETED"
-    if LATEST_ACTIVE_DEAL == did: LATEST_ACTIVE_DEAL = None
+    
+    DEALS_DB[did] = {"status": "COMPLETED", "seller": seller, "buyer": buyer, "amount": amt_num, "fee": get_fee(amt_num)[0], "escrower": etag, "details": "Completed Deal"}
+    LATEST_ACTIVE_DEAL = did
+
     await unpin_old(c, cid, rep_mid)
     amt_disp = f"₹{amt_num:,.2f}" if amt_num > 0 else "Deal Amount"
     txt = f"✅ <b>Deal Completed</b>\n🪪 <b>Trade ID:</b>\n{did}\n📤 <b>Released:</b> {amt_disp}\n👤 <b>Escrowed By:</b>\n{etag}\n\n~ {buyer} and {seller}\nare requested to drop the\nvouch before leaving 👇🏻\n\n<code>Vouch @chikuescrowservice for {amt_disp} smooth escrow deal</code>"
@@ -239,14 +241,50 @@ async def refund_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if LATEST_ACTIVE_DEAL == did: LATEST_ACTIVE_DEAL = None
 
 async def status_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    if not c.args: return
-    did = c.args[0].upper().strip()
-    if did not in DEALS_DB:
-        await u.message.reply_text(f"❓ Deal ID <code>{did}</code> record me nahi mili.", parse_mode="HTML")
+    global LATEST_ACTIVE_DEAL
+    did = None
+    rep = u.message.reply_to_message
+    raw_rep = rep.text or rep.caption if rep else ""
+    
+    # 1. Reply message se detect karein
+    if raw_rep:
+        f = extract_f(raw_rep)
+        did = f.get("deal_id")
+    
+    # 2. Argument /status DL-CHIKU-01 se detect karein
+    if not did and c.args:
+        raw_arg = " ".join(c.args)
+        f_arg = extract_f(raw_arg)
+        did = f_arg.get("deal_id") or re.sub(r"\s+", "", raw_arg.upper().replace("_", "-"))
+        
+    # 3. Fallback to latest deal
+    if not did and LATEST_ACTIVE_DEAL:
+        did = LATEST_ACTIVE_DEAL
+
+    if not did:
+        await u.message.reply_text("⚠️ Deal slip par <b>Reply</b> karke <code>/status</code> likhein ya <code>/status DL-CHIKU-01</code> bhejein!", parse_mode="HTML")
         return
-    d = DEALS_DB[did]
-    bdg = {"ACTIVE": "🟢", "COMPLETED": "✅", "CANCELLED": "❌", "ON HOLD": "⏳", "REFUNDED": "↩️"}.get(d["status"], "📌")
-    await u.message.reply_text(f"🔍 <b>DEAL STATUS</b>\n🪪 <b>ID:</b> {did}\n📌 <b>Status:</b> {bdg} {d['status']}\n💰 <b>Amount:</b> ₹{d['amount']:,.0f}\n👤 <b>Seller:</b> {d['seller']}\n👤 <b>Buyer:</b> {d['buyer']}", parse_mode="HTML")
+
+    # Database me ho toh wahan se uthayein
+    if did in DEALS_DB:
+        d = DEALS_DB[did]
+        amt = d.get('amount', 0.0)
+        amt_disp = f"₹{amt:,.0f}" if amt > 0 else "Deal Amount"
+        bdg = {"ACTIVE": "🟢", "COMPLETED": "✅", "CANCELLED": "❌", "ON HOLD": "⏳", "REFUNDED": "↩️"}.get(d["status"], "📌")
+        await u.message.reply_text(f"🔍 <b>DEAL STATUS</b>\n🪪 <b>ID:</b> {did}\n📌 <b>Status:</b> {bdg} {d['status']}\n💰 <b>Amount:</b> {amt_disp}\n👤 <b>Seller:</b> {d.get('seller','N/A')}\n👤 <b>Buyer:</b> {d.get('buyer','N/A')}", parse_mode="HTML")
+        return
+
+    # Agar DB me na ho lekin reply message ho toh reply se live parse karke banayein
+    if raw_rep:
+        f = extract_f(raw_rep)
+        st = "COMPLETED" if "completed" in raw_rep.lower() else ("ON HOLD" if "hold" in raw_rep.lower() else ("CANCELLED" if "cancelled" in raw_rep.lower() else "ACTIVE"))
+        bdg = {"ACTIVE": "🟢", "COMPLETED": "✅", "CANCELLED": "❌", "ON HOLD": "⏳"}.get(st, "📌")
+        amt_val = parse_amt(f["amount"])
+        amt_disp = f"₹{amt_val:,.0f}" if amt_val > 0 else (f["amount"] or "Deal Amount")
+        await u.message.reply_text(f"🔍 <b>DEAL STATUS</b>\n🪪 <b>ID:</b> {did}\n📌 <b>Status:</b> {bdg} {st}\n💰 <b>Amount:</b> {amt_disp}\n👤 <b>Seller:</b> {f['seller'] or 'N/A'}\n👤 <b>Buyer:</b> {f['buyer'] or 'N/A'}", parse_mode="HTML")
+        return
+
+    await u.message.reply_text(f"❓ Deal ID <code>{did}</code> record me nahi mili.", parse_mode="HTML")
 
 async def stats_cmd(u: Update, c: ContextTypes.DEFAULT_TYPE):
     await u.message.reply_text(f"📈 <b>@CHIKUESCROWSERVICE STATS</b>\n━━━━━━━━━━━━━━━━━━━\n🤝 <b>Total Deals:</b> {STATS['total_deals']}\n💼 <b>Total Volume:</b> ₹{STATS['total_volume']:,.2f}\n💵 <b>Total Fees:</b> ₹{STATS['total_fees']:,.2f}", parse_mode="HTML")
