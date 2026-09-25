@@ -1,4 +1,4 @@
-import os, re, unicodedata, threading
+import os, re, unicodedata, threading, asyncio
 from flask import Flask
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
@@ -17,7 +17,7 @@ PROOF_CHANNEL = ""
 DEALS_DB = {}
 STATS = {"total_deals": 0, "total_volume": 0.0, "total_fees": 0.0}
 DEAL_COUNTER = 1
-LATEST_ACTIVE_DEAL = None  # Fallback for direct commands without reply
+LATEST_ACTIVE_DEAL = None
 
 async def is_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
@@ -30,15 +30,20 @@ async def is_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def norm_txt(t):
     if not t: return ""
     t = unicodedata.normalize('NFKD', str(t))
-    conv = {'ꜱ':'s','s':'s','ᴇ':'e','e':'e','ʟ':'l','l':'l','ʀ':'r','r':'r','ʙ':'b','b':'b',
-            'ᴜ':'u','u':'u','ʏ':'y','y':'y','ᴅ':'d','d':'d','ᴀ':'a','a':'a','ᴛ':'t','t':'t',
-            'ɪ':'i','i':'i','ᴏ':'o','o':'o','ᴡ':'w','w':'w'}
+    conv = {
+        'ꜱ':'s','s':'s','ᴇ':'e','e':'e','ʟ':'l','l':'l','ʀ':'r','r':'r',
+        'ʙ':'b','b':'b','ᴜ':'u','u':'u','ʏ':'y','y':'y','ᴅ':'d','d':'d',
+        'ᴀ':'a','a':'a','ᴛ':'t','t':'t','ɪ':'i','i':'i','ᴏ':'o','o':'o',
+        'ᴡ':'w','w':'w','м':'m','m':'m','ɴ':'n','n':'n','ᴄ':'c','c':'c',
+        'ʜ':'h','h':'h','ᴋ':'k','k':'k','ᴘ':'p','p':'p'
+    }
     res = []
     for ch in t:
         res.append(conv.get(ch, ch))
     return "".join(res)
 
 def get_fee(amt):
+    if amt <= 0: return 0.0, "0%", "0₹", 0.0
     if amt <= 190: f, r, d = 10.0, "Flat ₹10", "Rs 10"
     elif amt <= 599: f, r, d = 20.0, "Flat ₹20", "Rs 20"
     elif amt <= 2000: f, r, d = round(amt*0.035, 2), "3.5%", f"3.5% - {round(amt*0.035):,.0f}₹"
@@ -101,10 +106,12 @@ async def res_uid(u, rep, ctx, cid):
     except: pass
     return f"@{cln}" if not u.startswith("@") else u
 
-async def safe_delete_cmd(u: Update):
+async def safe_delete_cmd(update: Update):
     try:
-        await u.message.delete()
-    except: pass
+        if update.message:
+            await update.message.delete()
+    except Exception:
+        pass
 
 async def send_fee_result(update: Update, amt: float):
     fee, rate, dsp, rcv = get_fee(amt)
@@ -164,6 +171,7 @@ async def start_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
 
     eu = u.effective_user
     etag = f"@{eu.username}" if eu.username else eu.first_name
+    amt_display = f"₹{amt_num:,.0f}" if amt_num > 0 else (f['amount'] or 'N/A')
 
     DEALS_DB[did] = {
         "status": "ACTIVE",
@@ -177,21 +185,23 @@ async def start_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
 
     slip = (
         f"<b>ESCROW DEAL</b>\n🪪 <b>DEAL ID:</b> {did}\n\n• <b>ꜱᴇʟʟᴇʀ :</b> {s_fmt}\n• <b>ʙᴜʏᴇʀ  :</b> {b_fmt}\n\n"
-        f"• <b>ᴅᴇᴀʟ ᴅᴇᴀᴛᴀɪʟꜱ :</b> {f['details'] or 'N/A'}\n• <b>ᴅᴇᴀʟ ᴀᴍᴏᴜɴᴛ :</b> {f['amount'] or 'N/A'}\n"
+        f"• <b>ᴅᴇᴀʟ ᴅᴇᴀᴛᴀɪʟꜱ :</b> {f['details'] or 'N/A'}\n• <b>ᴅᴇᴀʟ ᴀᴍᴏᴜɴᴛ :</b> {amt_display}\n"
         f"• <b>ᴇꜱᴄʀᴏᴡ ᴛɪʟʟ :</b> {f['till']}\n\n<b>Escrower :</b> {eu.mention_html()} ({eu.id}){fee_line}"
     )
     sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=slip, parse_mode="HTML")
-    try: 
-        # disable_notification=True for SILENT PIN
+    try:
         await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
     except: pass
 
 async def close_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     global DEAL_COUNTER, LATEST_ACTIVE_DEAL
+    # 1. Sabse pehle command delete karein
+    await safe_delete_cmd(u)
+
     if not await is_admin(u, c):
-        await u.message.reply_text("❌ Sirf escrow admin yeh command chala sakta hai.")
         return
     
+    chat_id = u.effective_chat.id
     amt_str, buyer, seller, did = "", "", "", None
     rep = u.message.reply_to_message
     
@@ -209,7 +219,6 @@ async def close_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
             if f["seller"]: seller = f["seller"]
             if f["buyer"]: buyer = f["buyer"]
     
-    # Fallback to last active deal agar bina reply ke sirf /close likha ho
     if not did and LATEST_ACTIVE_DEAL and LATEST_ACTIVE_DEAL in DEALS_DB:
         did = LATEST_ACTIVE_DEAL
         d = DEALS_DB[did]
@@ -226,16 +235,14 @@ async def close_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if seller:
         sm = re.search(r"@([A-Za-z0-9_]+)", seller)
         seller = f"@{sm.group(1)}" if sm else seller.split()[0]
+    else:
+        seller = "@Seller"
+
     if buyer:
         bm = re.search(r"@([A-Za-z0-9_]+)", buyer)
         buyer = f"@{bm.group(1)}" if bm else buyer.split()[0]
-
-    if amt_num <= 0 or not buyer or not seller:
-        await u.message.reply_text(
-            "⚠️ Deal slip ka <b>Reply</b> karke <code>/close</code> likhein!", 
-            parse_mode="HTML"
-        )
-        return
+    else:
+        buyer = "@Buyer"
 
     eu = u.effective_user
     etag = f"@{eu.username}" if eu.username else eu.mention_html()
@@ -253,19 +260,17 @@ async def close_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if LATEST_ACTIVE_DEAL == did:
         LATEST_ACTIVE_DEAL = None
 
+    amt_disp = f"₹{amt_num:,.2f}" if amt_num > 0 else "Deal Amount"
+
     txt = (
-        f"✅ <b>Deal Completed</b>\n🪪 <b>Trade ID:</b>\n{did}\n📤 <b>Released:</b> ₹{amt_num:,.2f}\n"
+        f"✅ <b>Deal Completed</b>\n🪪 <b>Trade ID:</b>\n{did}\n📤 <b>Released:</b> {amt_disp}\n"
         f"👤 <b>Escrowed By:</b>\n{etag}\n\n~ {buyer} and {seller}\nare requested to drop the\n"
-        f"vouch before leaving 👇🏻\n\n<code>Vouch @chikuescrowservice for ₹{amt_num:,.2f} smooth escrow deal</code>"
+        f"vouch before leaving 👇🏻\n\n<code>Vouch @chikuescrowservice for {amt_disp} smooth escrow deal</code>"
     )
-    sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=txt, parse_mode="HTML")
-    try: 
-        # Silent pin
-        await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
+    sm = await c.bot.send_message(chat_id=chat_id, text=txt, parse_mode="HTML")
+    try:
+        await c.bot.pin_chat_message(chat_id=chat_id, message_id=sm.message_id, disable_notification=True)
     except: pass
-    
-    # Auto-delete admin command message
-    await safe_delete_cmd(u)
 
     if PROOF_CHANNEL:
         try: await c.bot.send_message(chat_id=PROOF_CHANNEL, text=txt, parse_mode="HTML")
@@ -273,18 +278,13 @@ async def close_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
 
 async def hold_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     global LATEST_ACTIVE_DEAL
+    await safe_delete_cmd(u)
     if not await is_admin(u, c): return
-    rep = u.message.reply_to_message
-    
-    f = extract_f(rep.text or rep.caption) if rep and (rep.text or rep.caption) else {}
-    did = f.get("deal_id")
-    
-    if not did and LATEST_ACTIVE_DEAL:
-        did = LATEST_ACTIVE_DEAL
 
-    if not did:
-        await u.message.reply_text("⚠️ Deal slip ka <b>Reply</b> karke <code>/hold [reason]</code> likhein!", parse_mode="HTML")
-        return
+    chat_id = u.effective_chat.id
+    rep = u.message.reply_to_message
+    f = extract_f(rep.text or rep.caption) if rep and (rep.text or rep.caption) else {}
+    did = f.get("deal_id") or LATEST_ACTIVE_DEAL or "UNKNOWN"
 
     rsn = " ".join(c.args) if c.args else "Verification / Dispute Under Review"
     if did in DEALS_DB: DEALS_DB[did]["status"] = "ON HOLD"
@@ -296,29 +296,20 @@ async def hold_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
         f"👤 <b>Action By:</b> {u.effective_user.mention_html()}\n\n"
         f"🔒 <i>Payment release is paused until further update.</i>"
     )
-    sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=txt, parse_mode="HTML")
-    try: 
-        # Silent pin
-        await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
+    sm = await c.bot.send_message(chat_id=chat_id, text=txt, parse_mode="HTML")
+    try:
+        await c.bot.pin_chat_message(chat_id=chat_id, message_id=sm.message_id, disable_notification=True)
     except: pass
-    
-    # Auto-delete admin command message
-    await safe_delete_cmd(u)
 
 async def cancel_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     global LATEST_ACTIVE_DEAL
+    await safe_delete_cmd(u)
     if not await is_admin(u, c): return
-    rep = u.message.reply_to_message
-    
-    f = extract_f(rep.text or rep.caption) if rep and (rep.text or rep.caption) else {}
-    did = f.get("deal_id")
-    
-    if not did and LATEST_ACTIVE_DEAL:
-        did = LATEST_ACTIVE_DEAL
 
-    if not did:
-        await u.message.reply_text("⚠️ Deal slip ka <b>Reply</b> karke <code>/cancel [reason]</code> likhein!", parse_mode="HTML")
-        return
+    chat_id = u.effective_chat.id
+    rep = u.message.reply_to_message
+    f = extract_f(rep.text or rep.caption) if rep and (rep.text or rep.caption) else {}
+    did = f.get("deal_id") or LATEST_ACTIVE_DEAL or "UNKNOWN"
 
     rsn = " ".join(c.args) if c.args else "Mutual Agreement"
     seller, buyer, amt_str = f.get("seller", ""), f.get("buyer", ""), f.get("amount", "")
@@ -329,8 +320,8 @@ async def cancel_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
         buyer = DEALS_DB[did]["buyer"]
         amt_str = str(DEALS_DB[did]["amount"])
 
-    s_tag = seller.split()[0] if seller else "N/A"
-    b_tag = buyer.split()[0] if buyer else "N/A"
+    s_tag = seller.split()[0] if seller else "@Seller"
+    b_tag = buyer.split()[0] if buyer else "@Buyer"
     amt_num = parse_amt(amt_str)
     amt_display = f"₹{amt_num:,.0f}" if amt_num > 0 else "N/A"
 
@@ -343,32 +334,22 @@ async def cancel_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
         f"⚠️ <b>Reason:</b> {rsn}\n"
         f"👤 <b>Action By:</b> {u.effective_user.mention_html()}"
     )
-    sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=txt, parse_mode="HTML")
-    try: 
-        # Silent pin
-        await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
+    sm = await c.bot.send_message(chat_id=chat_id, text=txt, parse_mode="HTML")
+    try:
+        await c.bot.pin_chat_message(chat_id=chat_id, message_id=sm.message_id, disable_notification=True)
     except: pass
     
-    if LATEST_ACTIVE_DEAL == did:
-        LATEST_ACTIVE_DEAL = None
-        
-    # Auto-delete admin command message
-    await safe_delete_cmd(u)
+    if LATEST_ACTIVE_DEAL == did: LATEST_ACTIVE_DEAL = None
 
 async def refund_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     global LATEST_ACTIVE_DEAL
+    await safe_delete_cmd(u)
     if not await is_admin(u, c): return
-    rep = u.message.reply_to_message
-    
-    f = extract_f(rep.text or rep.caption) if rep and (rep.text or rep.caption) else {}
-    did = f.get("deal_id")
-    
-    if not did and LATEST_ACTIVE_DEAL:
-        did = LATEST_ACTIVE_DEAL
 
-    if not did:
-        await u.message.reply_text("⚠️ Deal slip ka <b>Reply</b> karke <code>/refund</code> likhein!", parse_mode="HTML")
-        return
+    chat_id = u.effective_chat.id
+    rep = u.message.reply_to_message
+    f = extract_f(rep.text or rep.caption) if rep and (rep.text or rep.caption) else {}
+    did = f.get("deal_id") or LATEST_ACTIVE_DEAL or "N/A"
 
     buyer = f.get("buyer", "")
     amt_str = f.get("amount", "")
@@ -378,28 +359,24 @@ async def refund_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
         buyer = DEALS_DB[did]["buyer"]
         amt_str = str(DEALS_DB[did]["amount"])
 
-    b_tag = buyer.split()[0] if buyer else "Buyer"
+    b_tag = buyer.split()[0] if buyer else "@Buyer"
     amt_num = parse_amt(amt_str)
+    amt_disp = f"₹{amt_num:,.0f}" if amt_num > 0 else "Deal Amount"
 
     txt = (
         f"↩️ <b>ESCROW REFUND PROCESSED</b>\n━━━━━━━━━━━━━━━━━━━\n"
         f"🪪 <b>Deal ID:</b> {did}\n"
         f"👤 <b>Refund To:</b> {b_tag}\n"
-        f"💰 <b>Amount:</b> ₹{amt_num:,.0f}\n"
+        f"💰 <b>Amount:</b> {amt_disp}\n"
         f"👤 <b>Escrower:</b> {u.effective_user.mention_html()}\n\n"
         f"⚠️ <i>Escrow fees non-refundable as per policy.</i>"
     )
-    sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=txt, parse_mode="HTML")
-    try: 
-        # Silent pin
-        await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
+    sm = await c.bot.send_message(chat_id=chat_id, text=txt, parse_mode="HTML")
+    try:
+        await c.bot.pin_chat_message(chat_id=chat_id, message_id=sm.message_id, disable_notification=True)
     except: pass
     
-    if LATEST_ACTIVE_DEAL == did:
-        LATEST_ACTIVE_DEAL = None
-        
-    # Auto-delete admin command message
-    await safe_delete_cmd(u)
+    if LATEST_ACTIVE_DEAL == did: LATEST_ACTIVE_DEAL = None
 
 async def status_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not c.args:
@@ -494,4 +471,4 @@ if __name__ == '__main__':
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_txt))
     
     app.run_polling(drop_pending_updates=True)
-    
+        
