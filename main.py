@@ -12,21 +12,19 @@ def run_web():
     web_app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8938665546:AAH-1KMv8sD33fEXGPGYWmLkA9ZYIxfKJ8I")
-OWNER_ID = 7364435907
-DB_FILE = "escrow.db"
-LAST_PIN = None
+OWNER_ID, DB_FILE, LAST_PIN = 7364435907, "escrow.db", None
 
-def db_run(query, params=(), fetch=None):
+def db_run(q, p=(), fetch=None):
     with sqlite3.connect(DB_FILE) as conn:
         c = conn.cursor()
-        c.execute(query, params)
+        c.execute(q, p)
         res = c.fetchall() if fetch == "all" else (c.fetchone() if fetch == "one" else None)
         conn.commit()
         return res
 
-db_run('''CREATE TABLE IF NOT EXISTS deals (did TEXT PRIMARY KEY, status TEXT, seller TEXT, buyer TEXT, amt REAL, fee REAL, escrower TEXT, msg_id INTEGER)''')
-db_run('''CREATE TABLE IF NOT EXISTS stats (id INTEGER PRIMARY KEY, deals INTEGER, vol REAL, fees REAL)''')
-db_run('''CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v INTEGER)''')
+db_run('CREATE TABLE IF NOT EXISTS deals (did TEXT PRIMARY KEY, status TEXT, seller TEXT, buyer TEXT, amt REAL, fee REAL, escrower TEXT, msg_id INTEGER)')
+db_run('CREATE TABLE IF NOT EXISTS stats (id INTEGER PRIMARY KEY, deals INTEGER, vol REAL, fees REAL)')
+db_run('CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v INTEGER)')
 db_run('INSERT OR IGNORE INTO stats VALUES (1, 0, 0.0, 0.0)')
 db_run('INSERT OR IGNORE INTO meta VALUES ("ctr", 11254)')
 
@@ -36,22 +34,18 @@ def get_next_did():
     return f"DL-CHIKU-{curr}"
 
 async def is_admin(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    if not u.effective_user or u.effective_user.id == OWNER_ID or u.effective_chat.type == "private":
-        return True
+    if not u.effective_user or u.effective_user.id == OWNER_ID or u.effective_chat.type == "private": return True
     try:
         admins = await c.bot.get_chat_administrators(u.effective_chat.id)
         return any(a.user.id == u.effective_user.id for a in admins)
-    except:
-        return True
+    except: return True
 
 async def is_owner(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not u.effective_user:
         if u.effective_chat and u.effective_chat.type in ["group", "supergroup"]:
             try:
                 admins = await c.bot.get_chat_administrators(u.effective_chat.id)
-                for a in admins:
-                    if a.status == "creator" and a.user.id == OWNER_ID:
-                        return True
+                return any(a.status == "creator" and a.user.id == OWNER_ID for a in admins)
             except: pass
         return False
     return u.effective_user.id == OWNER_ID
@@ -77,7 +71,6 @@ def parse_form(raw):
     cf = clean_txt(raw)
     m_id = re.search(r"dl[-_ ]*chiku[-_ ]*(\d+)", cf, re.I)
     if m_id: d["id"] = f"DL-CHIKU-{m_id.group(1)}"
-    
     rl, cl = raw.split('\n'), cf.split('\n')
     for i, (r, c) in enumerate(zip(rl, cl)):
         if not c.strip(): continue
@@ -93,7 +86,6 @@ def parse_form(raw):
             m = re.search(r'(\d+(?:\.\d+)?)', clean_txt(val).replace(',', ''))
             if m: d['amount'] = float(m.group(1))
         elif 'till' in lbl and not d['till']: d['till'] = val
-
     if d['amount'] == 0.0:
         no_u = re.sub(r'@\w+', '', cf).replace(',', '')
         m_amt = re.search(r'(?:amount|amt|price)[\s\:\-]*[₹rs\s]*(\d+(?:\.\d+)?)', no_u) or re.search(r'[₹rs]\s*(\d+(?:\.\d+)?)', no_u)
@@ -125,17 +117,10 @@ async def del_m(u: Update):
 
 async def send_c(u: Update, amt: float):
     fee, rate, _, rcv = calc_fee(amt)
-    await u.message.reply_text(
-        f"📊 <b>@CHIKUESCROWSERVICE FEE CALCULATOR</b>\n━━━━━━━━━━━━━━━━━━━\n"
-        f"💰 <b>Deal Amount:</b> ₹{amt:,.0f}\n⚡ <b>Fee Rate:</b> {rate}\n"
-        f"💵 <b>Escrow Fee:</b> ₹{fee:,.0f}\n━━━━━━━━━━━━━━━━━━━\n"
-        f"✅ <b>Seller Receives:</b> ₹{rcv:,.0f}\n\n📱 <b>RG :</b> @CHIKUNXT",
-        parse_mode="HTML"
-    )
+    await u.message.reply_text(f"📊 <b>@CHIKUESCROWSERVICE FEE CALCULATOR</b>\n━━━━━━━━━━━━━━━━━━━\n💰 <b>Deal Amount:</b> ₹{amt:,.0f}\n⚡ <b>Fee Rate:</b> {rate}\n💵 <b>Escrow Fee:</b> ₹{fee:,.0f}\n━━━━━━━━━━━━━━━━━━━\n✅ <b>Seller Receives:</b> ₹{rcv:,.0f}\n\n📱 <b>RG :</b> @CHIKUNXT", parse_mode="HTML")
 
 async def cmd_form(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    msg = "<b>ᴇꜱᴄʀᴏᴡ ᴅᴇᴀʟ ғᴏʀᴍ</b>\n\n• <b>ꜱᴇʟʟᴇʀ :</b> \n\n• <b>ʙᴜʏᴇʀ :</b> \n\n• <b>ᴅᴇᴀʟ ᴅᴇᴀᴛᴀɪʟꜱ :</b> \n\n• <b>ᴅᴇᴀʟ ᴀᴍᴏᴜɴᴛ :</b> \n\n• <b>ᴇꜱᴄʀᴏᴡ ᴛɪʟʟ :</b> \n\n• <b>ғᴏʀ ʀᴇʟᴇᴀsᴇ sᴇʟʟᴇʀ ᴜᴘɪ :</b> \n\n<i>ғᴏʀ ᴍᴏʀᴇ ᴘʀᴏᴏғs ᴄʜᴇᴄᴋ ɢʀᴏᴜᴘ ᴘɪɴ ᴍᴇssᴀɢᴇs..</i>\n\n⚠️ <b>ESCROW FEES IS NON - REFUNDABLE NO MATTER IF THE DEAL GETS CANCELLED</b> ⚠️"
-    await u.message.reply_text(msg, parse_mode="HTML")
+    await u.message.reply_text("<b>ᴇꜱᴄʀᴏᴡ ᴅᴇᴀʟ ғᴏʀᴍ</b>\n\n• <b>ꜱᴇʟʟᴇʀ :</b> \n\n• <b>ʙᴜʏᴇʀ :</b> \n\n• <b>ᴅᴇᴀʟ ᴅᴇᴀᴛᴀɪʟꜱ :</b> \n\n• <b>ᴅᴇᴀʟ ᴀᴍᴏᴜɴᴛ :</b> \n\n• <b>ᴇꜱᴄʀᴏᴡ ᴛɪʟʟ :</b> \n\n• <b>ғᴏʀ ʀᴇʟᴇᴀsᴇ sᴇʟʟᴇʀ ᴜᴘɪ :</b> \n\n<i>ғᴏʀ ᴍᴏʀᴇ ᴘʀᴏᴏғs ᴄʜᴇᴄᴋ ɢʀᴏᴜᴘ ᴘɪɴ ᴍᴇssᴀɢᴇs..</i>\n\n⚠️ <b>ESCROW FEES IS NON - REFUNDABLE NO MATTER IF THE DEAL GETS CANCELLED</b> ⚠️", parse_mode="HTML")
 
 async def cmd_fee(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not c.args:
@@ -154,12 +139,10 @@ async def cmd_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if LAST_PIN:
         try: await c.bot.unpin_chat_message(chat_id=u.effective_chat.id, message_id=LAST_PIN)
         except: pass
-
     f = parse_form(rep.text or rep.caption)
     if c.args:
         n = re.sub(r'[^\d\.]', '', c.args[0])
         if n: f["amount"] = float(n)
-
     seller = await resolve_u(f["seller"] or "N/A", rep, c, u.effective_chat.id)
     buyer = await resolve_u(f["buyer"] or "N/A", rep, c, u.effective_chat.id)
     amt = f["amount"]
@@ -167,12 +150,10 @@ async def cmd_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     fee_line = f"\n\nFees {fee_tag}" if amt > 0 else ""
     did = get_next_did()
     eu = u.effective_user
-
     amt_lbl = f"₹{amt:,.0f}" if amt > 0 else "Deal Amount"
     esc_name = eu.mention_html() if eu else "Admin"
     esc_tag = (f"@{eu.username}" if eu.username else eu.first_name) if eu else "Admin"
     esc_id = f"({eu.id})" if eu else ""
-    
     msg = f"<b>ESCROW DEAL</b>\n🪪 <b>DEAL ID:</b> {did}\n\n• <b>ꜱᴇʟʟᴇʀ :</b> {seller}\n• <b>ʙᴜʏᴇʀ  :</b> {buyer}\n\n• <b>ᴅᴇᴀʟ ᴅᴇᴀᴛᴀɪʟꜱ :</b> {f['details'] or 'N/A'}\n• <b>ᴅᴇᴀʟ ᴀᴍᴏᴜɴᴛ :</b> {amt_lbl}\n• <b>ᴇꜱᴄʀᴏᴡ ᴛɪʟʟ :</b> {f['till'] or 'SECURE'}\n\n<b>Escrower :</b> {esc_name} {esc_id}{fee_line}"
     sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=msg, parse_mode="HTML")
     try:
@@ -195,7 +176,6 @@ async def cmd_received(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not did:
         row = db_run('SELECT did, amt, seller, buyer FROM deals ORDER BY ROWID DESC LIMIT 1', fetch="one")
         if row: did, amt, seller, buyer = row[0], (amt or row[1]), (seller or row[2]), (buyer or row[3])
-
     amt_lbl = f"₹{amt:,.0f}" if amt > 0 else "Deal Amount"
     s_tag = seller.split()[0] if seller else "@Seller"
     b_tag = buyer.split()[0] if buyer else "@Buyer"
@@ -208,7 +188,6 @@ async def cmd_close(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(u, c): return
     cid, rep = u.effective_chat.id, u.message.reply_to_message
     did, amt, seller, buyer, r_mid = None, 0.0, "", "", None
-
     if rep and (rep.text or rep.caption):
         r_mid = rep.message_id
         f = parse_form(rep.text or rep.caption)
@@ -218,24 +197,19 @@ async def cmd_close(u: Update, c: ContextTypes.DEFAULT_TYPE):
             r_mid = row[3] or r_mid
             amt = amt if amt > 0 else row[0]
             seller, buyer = seller or row[1], buyer or row[2]
-
     if not did:
         row = db_run('SELECT did, amt, seller, buyer, msg_id FROM deals ORDER BY ROWID DESC LIMIT 1', fetch="one")
         if row: did, amt, seller, buyer, r_mid = row[0], (amt or row[1]), (seller or row[2]), (buyer or row[3]), row[4]
-
     if c.args:
         n = re.sub(r'[^\d\.]', '', c.args[0])
         if n and float(n) > 0: amt = float(n)
-
     fee_val = calc_fee(amt)[0]
     db_run('UPDATE stats SET deals = deals + 1, vol = vol + ?, fees = fees + ? WHERE id = 1', (amt, fee_val))
     if did: db_run('UPDATE deals SET status = "COMPLETED" WHERE did = ?', (did,))
-
     target = r_mid or LAST_PIN
     if target:
         try: await c.bot.unpin_chat_message(chat_id=cid, message_id=target)
         except: pass
-
     amt_lbl = f"₹{amt:,.2f}" if amt > 0 else "Deal Amount"
     s_tag = seller.split()[0] if seller else "@Seller"
     b_tag = buyer.split()[0] if buyer else "@Buyer"
@@ -368,8 +342,11 @@ async def text_router(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not u.message or not u.message.text: return
     t = u.message.text.strip().lower()
     raw = t.split('@')[0]
-    if raw in ["form", ".form"]: await cmd_form(u, c)
-    elif raw in ["fee", "fees", ".fee", ".fees"]: await cmd_fee(u, c)
-    elif raw in ["stats", ".stats"]: await cmd_stats(u, c)
-    elif raw in ["leaderboard", ".leaderboard", "/leaderboard"]: await cmd_leaderboard(u, c)
-    elif raw in ["adminhold", ".adminhold"]: await 
+    cmds = {
+        "form": cmd_form, ".form": cmd_form,
+        "fee": cmd_fee, "fees": cmd_fee, ".fee": cmd_fee, ".fees": cmd_fee,
+        "stats": cmd_stats, ".stats": cmd_stats,
+        "leaderboard": cmd_leaderboard, ".leaderboard": cmd_leaderboard, "/leaderboard": cmd_leaderboard,
+        "adminhold": cmd_adminhold, ".adminhold": cmd_adminhold,
+        "refund": cmd_refund, ".refund": cmd_refund,
+        "received": cmd_received, ".received": cmd_received, "recieved": cmd_received, ".recieved": cmd_rece
