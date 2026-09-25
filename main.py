@@ -55,32 +55,26 @@ def extract_f(raw_text):
     n = norm_txt(raw_text)
     f = {"seller": "", "buyer": "", "details": "", "amount": "", "till": "SECURE", "deal_id": ""}
     
-    # Deal ID detection
     dm = re.search(r"DL[-_]CHIKU[-_]\d+", n, re.I)
     if dm:
         f["deal_id"] = dm.group(0).upper().replace("_", "-")
 
-    # Seller detection
     sm = re.search(r"seller\s*[:\-]\s*([^\n\r]+)", n, re.I)
     if sm:
         f["seller"] = sm.group(1).strip()
 
-    # Buyer detection
     bm = re.search(r"buyer\s*[:\-]\s*([^\n\r]+)", n, re.I)
     if bm:
         f["buyer"] = bm.group(1).strip()
 
-    # Amount detection
     am = re.search(r"(?:deal\s*amount|amount)\s*[:\-]\s*([^\n\r]+)", n, re.I)
     if am:
         f["amount"] = am.group(1).strip()
 
-    # Details detection
     dtm = re.search(r"(?:deal\s*details|deal\s*deatails|details)\s*[:\-]\s*([^\n\r]+)", n, re.I)
     if dtm:
         f["details"] = dtm.group(1).strip()
 
-    # Till detection
     tm = re.search(r"(?:escrow\s*till|till)\s*[:\-]\s*([^\n\r]+)", n, re.I)
     if tm:
         f["till"] = tm.group(1).strip()
@@ -193,10 +187,8 @@ async def close_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if rep and (rep.text or rep.caption):
         raw = rep.text or rep.caption
         f = extract_f(raw)
-        
         did = f["deal_id"]
         
-        # Agar DB me mil gayi toh exact data wahan se utha lo
         if did and did in DEALS_DB:
             d = DEALS_DB[did]
             amt_str = str(d["amount"])
@@ -213,7 +205,6 @@ async def close_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
 
     amt_num = parse_amt(amt_str)
     
-    # Normalize buyer/seller format
     if seller:
         sm = re.search(r"@([A-Za-z0-9_]+)", seller)
         seller = f"@{sm.group(1)}" if sm else seller.split()[0]
@@ -421,13 +412,6 @@ async def handle_txt(u: Update, c: ContextTypes.DEFAULT_TYPE):
         amt = parse_amt(fee_match.group(1))
         if amt > 0: await send_fee_result(u, amt); return
 
-    if u.effective_chat.type in ["group", "supergroup"]:
-        if not await is_admin(u, c):
-            fn = ((u.effective_user.first_name or "") + " " + (u.effective_user.last_name or "")).lower()
-            un = (u.effective_user.username or "").lower()
-            if any(k in fn or k in un for k in ["chikunxt", "harshal", "chiku escrow"]):
-                await u.message.reply_text(f"🚨 <b>FAKE ADMIN ALERT!</b>\n⚠️ {u.effective_user.mention_html()} real admin nahi hai!\n👉 Real: @CHIKUNXT (<code>{OWNER_ID}</code>)", parse_mode="HTML")
-
 if __name__ == '__main__':
     threading.Thread(target=run_web, daemon=True).start()
     app = ApplicationBuilder().token(BOT_TOKEN).build()
@@ -447,4 +431,4 @@ if __name__ == '__main__':
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_txt))
     
     app.run_polling(drop_pending_updates=True)
-    
+        
