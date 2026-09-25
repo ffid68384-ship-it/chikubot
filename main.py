@@ -46,7 +46,6 @@ async def is_admin(u: Update, c: ContextTypes.DEFAULT_TYPE):
 
 async def is_owner(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not u.effective_user:
-        # Agar user group ya channel ke name se message bhej raha hai
         if u.effective_chat and u.effective_chat.type in ["group", "supergroup"]:
             try:
                 admins = await c.bot.get_chat_administrators(u.effective_chat.id)
@@ -372,4 +371,5 @@ async def text_router(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if raw in ["form", ".form"]: await cmd_form(u, c)
     elif raw in ["fee", "fees", ".fee", ".fees"]: await cmd_fee(u, c)
     elif raw in ["stats", ".stats"]: await cmd_stats(u, c)
-    elif raw in ["leaderboard", ".leaderboard", "/leaderboard"]: await cmd
+    elif raw in ["leaderboard", ".leaderboard", "/leaderboard"]: await cmd_leaderboard(u, c)
+    elif raw in ["adminhold", ".adminhold"]: await 
