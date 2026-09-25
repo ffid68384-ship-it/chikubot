@@ -8,7 +8,8 @@ web_app = Flask(__name__)
 def home(): return "Chiku Escrow 24/7"
 def run_web(): web_app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
 
-BOT_TOKEN, OWNER_ID, PROOF_CHANNEL = "8938665546:AAH-1KMv8sD33fEXGPGYWmLkA9ZYIxfKJ8I", 7364435907, ""
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8938665546:AAH-1KMv8sD33fEXGPGYWmLkA9ZYIxfKJ8I")
+OWNER_ID, PROOF_CHANNEL = 7364435907, ""
 DEALS_DB, STATS = {}, {"total_deals": 0, "total_volume": 0.0, "total_fees": 0.0}
 DEAL_COUNTER, LATEST_ACTIVE_DEAL, LATEST_PINNED_MSG_ID = 1, None, None
 
@@ -19,8 +20,15 @@ async def is_admin(u: Update, c: ContextTypes.DEFAULT_TYPE):
 
 def norm_txt(t):
     if not t: return ""
-    conv = {'ꜱ':'s','s':'s','ᴇ':'e','e':'e','ʟ':'l','l':'l','ʀ':'r','r':'r','ʙ':'b','b':'b','ᴜ':'u','u':'u','ʏ':'y','y':'y','ᴅ':'d','d':'d','ᴀ':'a','a':'a','ᴛ':'t','t':'t','ɪ':'i','i':'i','ᴏ':'o','o':'o','ᴡ':'w','w':'w','м':'m','m':'m','ɴ':'n','n':'n','ᴄ':'c','c':'c','ʜ':'h','h':'h','ᴋ':'k','k':'k','ᴘ':'p','p':'p'}
-    return "".join(conv.get(ch, ch) for ch in unicodedata.normalize('NFKD', str(t)))
+    norm = unicodedata.normalize('NFKD', str(t))
+    conv = {
+        'ꜱ':'s','s':'s','ᴇ':'e','e':'e','ʟ':'l','l':'l','ʀ':'r','r':'r',
+        'ʙ':'b','b':'b','ᴜ':'u','u':'u','ʏ':'y','y':'y','ᴅ':'d','d':'d',
+        'ᴀ':'a','a':'a','ᴛ':'t','t':'t','ɪ':'i','i':'i','ᴏ':'o','o':'o',
+        'ᴡ':'w','w':'w','м':'m','m':'m','ɴ':'n','n':'n','ᴄ':'c','c':'c',
+        'ʜ':'h','h':'h','ᴋ':'k','k':'k','ᴘ':'p','p':'p','ғ':'f','f':'f'
+    }
+    return "".join(conv.get(ch, ch) for ch in norm)
 
 def get_fee(amt):
     if amt <= 0: return 0.0, "0%", "0₹", 0.0
@@ -31,32 +39,57 @@ def get_fee(amt):
 
 def parse_amt(val):
     if not val: return 0.0
-    m = re.search(r"(\d+(\.\d+)?)(\s*k)?", str(val).lower().replace("₹","").replace(",","").replace("rs","").strip())
-    return float(m.group(1)) * (1000 if m.group(3) else 1) if m else 0.0
+    val_clean = str(val).lower().replace("₹", "").replace(",", "").replace("rs", "").replace("inr", "")
+    m = re.search(r"(\d+(?:\.\d+)?)(\s*k)?", val_clean)
+    if m:
+        num = float(m.group(1))
+        return num * (1000 if m.group(2) else 1)
+    return 0.0
 
 def extract_f(raw):
     n = norm_txt(raw)
-    f = {"seller": "", "buyer": "", "details": "", "amount": "", "till": "", "deal_id": ""}
+    f = {"seller": "", "buyer": "", "details": "", "amount": "", "till": "", "upi": "", "deal_id": ""}
+    
     dm = re.search(r"DL[-_ ]*CHIKU[-_ ]*\d+", n, re.I)
     if dm: f["deal_id"] = re.sub(r"\s+", "", dm.group(0).upper().replace("_", "-"))
-    for k, p in [("seller", r"seller\s*[:\-]\s*([^\n\r]+)"), ("buyer", r"buyer\s*[:\-]\s*([^\n\r]+)"), ("amount", r"(?:deal\s*amount|amount|released)\s*[:\-]\s*([^\n\r]+)"), ("details", r"(?:deal\s*details|details)\s*[:\-]\s*([^\n\r]+)"), ("till", r"(?:escrow\s*till|till)\s*[:\-]\s*([^\n\r]+)")]:
+    
+    patterns = {
+        "seller": r"(?:[•\*\-]?\s*seller|sell(?:er)?)\s*[:\-]\s*([^\n\r]+)",
+        "buyer": r"(?:[•\*\-]?\s*buyer|buy(?:er)?)\s*[:\-]\s*([^\n\r]+)",
+        "details": r"(?:[•\*\-]?\s*(?:deal\s*)?(?:deatails|details|detail|info))\s*[:\-]\s*([^\n\r]+)",
+        "amount": r"(?:[•\*\-]?\s*(?:deal\s*)?(?:amount|amt|price|cost|released))\s*[:\-]\s*([^\n\r]+)",
+        "till": r"(?:[•\*\-]?\s*(?:escrow\s*)?till)\s*[:\-]\s*([^\n\r]+)",
+        "upi": r"(?:[•\*\-]?\s*(?:for\s*release\s*)?(?:seller\s*)?upi)\s*[:\-]\s*([^\n\r]+)"
+    }
+    
+    for key, p in patterns.items():
         m = re.search(p, n, re.I)
-        if m: f[k] = m.group(1).strip()
+        if m: f[key] = m.group(1).strip()
     return f
 
 async def res_uid(u, rep, ctx, cid):
-    if not u or u == "N/A": return u or "N/A"
+    if not u or u.upper() == "N/A": return u or "N/A"
     cln = u.strip()
     if "(" in cln and ")" in cln: return cln
     if cln.isdigit(): return f'<a href="tg://user?id={cln}">{cln}</a> ({cln})'
+    
+    if cln.lower() in ["me", "i", "myself", "mai", "main", "admin"] and rep and rep.from_user:
+        fu = rep.from_user
+        tag = f"@{fu.username}" if fu.username else fu.first_name
+        return f"{tag} ({fu.id})"
+        
     if rep and rep.entities:
         for ent in rep.entities:
             if ent.type == "text_mention" and ent.user:
                 mt = rep.text[ent.offset:ent.offset+ent.length] if rep.text else ""
-                if (cln.lower() in mt.lower()) or (ent.user.first_name and cln.lower() in ent.user.first_name.lower()): return f'{ent.user.mention_html()} ({ent.user.id})'
+                if (cln.lower() in mt.lower()) or (ent.user.first_name and cln.lower() in ent.user.first_name.lower()):
+                    return f'{ent.user.mention_html()} ({ent.user.id})'
+                    
     if rep and rep.from_user:
         fu = rep.from_user
-        if (fu.first_name and cln.lower() in fu.first_name.lower()) or (fu.username and cln.replace("@","").lower() == fu.username.lower()): return f'{fu.mention_html()} ({fu.id})'
+        if (fu.first_name and cln.lower() in fu.first_name.lower()) or (fu.username and cln.replace("@","").lower() == fu.username.lower()):
+            return f'{fu.mention_html()} ({fu.id})'
+            
     pure_u = cln.replace("@", "")
     if cln.startswith("@"):
         try:
@@ -119,13 +152,21 @@ async def start_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     did = f"DL-CHIKU-{DEAL_COUNTER:02d}"
     DEAL_COUNTER += 1
     LATEST_ACTIVE_DEAL = did
-    eu, amt_display, till = u.effective_user, (f"₹{amt_num:,.0f}" if amt_num > 0 else (f['amount'] or 'N/A')), (f['till'] if f['till'] else "SECURE")
-    sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=f"<b>ESCROW DEAL</b>\n🪪 <b>DEAL ID:</b> {did}\n\n• <b>ꜱᴇʟʟᴇʀ :</b> {s_fmt}\n• <b>ʙᴜʏᴇʀ  :</b> {b_fmt}\n\n• <b>ᴅᴇᴀʟ ᴅᴇᴀᴛᴀɪʟꜱ :</b> {f['details'] or 'N/A'}\n• <b>ᴅᴇᴀʟ ᴀᴍᴏᴜɴᴛ :</b> {amt_display}\n• <b>ᴇꜱᴄʀᴏᴡ ᴛɪʟʟ :</b> {till}\n\n<b>Escrower :</b> {eu.mention_html()} ({eu.id}){fee_line}", parse_mode="HTML")
+    eu = u.effective_user
+    amt_display = f"₹{amt_num:,.0f}" if amt_num > 0 else (f['amount'] or 'N/A')
+    till = f['till'] if f['till'] else "SECURE"
+    details = f['details'] if f['details'] else 'N/A'
+    
+    sm = await c.bot.send_message(
+        chat_id=u.effective_chat.id,
+        text=f"<b>ESCROW DEAL</b>\n🪪 <b>DEAL ID:</b> {did}\n\n• <b>ꜱᴇʟʟᴇʀ :</b> {s_fmt}\n• <b>ʙᴜʏᴇʀ  :</b> {b_fmt}\n\n• <b>ᴅᴇᴀʟ ᴅᴇᴀᴛᴀɪʟꜱ :</b> {details}\n• <b>ᴅᴇᴀʟ ᴀᴍᴏᴜɴᴛ :</b> {amt_display}\n• <b>ᴇꜱᴄʀᴏᴡ ᴛɪʟʟ :</b> {till}\n\n<b>Escrower :</b> {eu.mention_html()} ({eu.id}){fee_line}",
+        parse_mode="HTML"
+    )
     try:
         await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
         LATEST_PINNED_MSG_ID = sm.message_id
     except: pass
-    DEALS_DB[did] = {"status": "ACTIVE", "seller": s_fmt, "buyer": b_fmt, "amount": amt_num, "fee": fee_num, "escrower": (f"@{eu.username}" if eu.username else eu.first_name), "details": f["details"] or "N/A", "msg_id": sm.message_id}
+    DEALS_DB[did] = {"status": "ACTIVE", "seller": s_fmt, "buyer": b_fmt, "amount": amt_num, "fee": fee_num, "escrower": (f"@{eu.username}" if eu.username else eu.first_name), "details": details, "msg_id": sm.message_id}
 
 async def close_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     global DEAL_COUNTER, LATEST_ACTIVE_DEAL, LATEST_PINNED_MSG_ID
@@ -135,22 +176,40 @@ async def close_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if rep and (rep.text or rep.caption):
         rep_mid, f = rep.message_id, extract_f(rep.text or rep.caption)
         did = f["deal_id"]
-        if did and did in DEALS_DB: amt_str, seller, buyer, rep_mid = str(DEALS_DB[did]["amount"]), DEALS_DB[did]["seller"], DEALS_DB[did]["buyer"], DEALS_DB[did].get("msg_id", rep_mid)
-        else: amt_str, seller, buyer = f["amount"], f["seller"], f["buyer"]
-    if not did and LATEST_ACTIVE_DEAL and LATEST_ACTIVE_DEAL in DEALS_DB: did = LATEST_ACTIVE_DEAL; amt_str, seller, buyer, rep_mid = str(DEALS_DB[did]["amount"]), DEALS_DB[did]["seller"], DEALS_DB[did]["buyer"], DEALS_DB[did].get("msg_id")
+        if did and did in DEALS_DB:
+            amt_str = str(DEALS_DB[did]["amount"])
+            seller, buyer = DEALS_DB[did]["seller"], DEALS_DB[did]["buyer"]
+            rep_mid = DEALS_DB[did].get("msg_id", rep_mid)
+        else:
+            amt_str, seller, buyer = f["amount"], f["seller"], f["buyer"]
+    if not did and LATEST_ACTIVE_DEAL and LATEST_ACTIVE_DEAL in DEALS_DB:
+        did = LATEST_ACTIVE_DEAL
+        amt_str = str(DEALS_DB[did]["amount"])
+        seller, buyer = DEALS_DB[did]["seller"], DEALS_DB[did]["buyer"]
+        rep_mid = DEALS_DB[did].get("msg_id")
     if len(c.args) >= 1 and not amt_str: amt_str = c.args[0]
     if len(c.args) >= 2 and not buyer: buyer = c.args[1]
     if len(c.args) >= 3 and not seller: seller = c.args[2]
+    
     amt_num = parse_amt(amt_str)
-    seller_tag, buyer_tag = (seller.split()[0] if seller else "@Seller"), (buyer.split()[0] if buyer else "@Buyer")
+    seller_tag = seller.split()[0] if seller else "@Seller"
+    buyer_tag = buyer.split()[0] if buyer else "@Buyer"
     eu = u.effective_user
-    if not did: did = f"DL-CHIKU-{DEAL_COUNTER:02d}"; DEAL_COUNTER += 1
-    STATS["total_deals"] += 1; STATS["total_volume"] += amt_num; STATS["total_fees"] += get_fee(amt_num)[0]
+    if not did:
+        did = f"DL-CHIKU-{DEAL_COUNTER:02d}"
+        DEAL_COUNTER += 1
+    STATS["total_deals"] += 1
+    STATS["total_volume"] += amt_num
+    STATS["total_fees"] += get_fee(amt_num)[0]
     DEALS_DB[did] = {"status": "COMPLETED", "seller": seller, "buyer": buyer, "amount": amt_num, "fee": get_fee(amt_num)[0], "escrower": (f"@{eu.username}" if eu.username else eu.mention_html()), "details": "Completed Deal"}
     LATEST_ACTIVE_DEAL = did
     await unpin_old(c, cid, rep_mid)
     amt_disp = f"₹{amt_num:,.2f}" if amt_num > 0 else "Deal Amount"
-    sm = await c.bot.send_message(chat_id=cid, text=f"✅ <b>Deal Completed</b>\n🪪 <b>Trade ID:</b>\n{did}\n📤 <b>Released:</b> {amt_disp}\n👤 <b>Escrowed By:</b>\n{f'@{eu.username}' if eu.username else eu.mention_html()}\n\n~ {buyer_tag} and {seller_tag}\nare requested to drop the\nvouch before leaving 👇🏻\n\n<code>Vouch @chikuescrowservice for {amt_disp} smooth escrow deal</code>", parse_mode="HTML")
+    sm = await c.bot.send_message(
+        chat_id=cid,
+        text=f"✅ <b>Deal Completed</b>\n🪪 <b>Trade ID:</b>\n{did}\n📤 <b>Released:</b> {amt_disp}\n👤 <b>Escrowed By:</b>\n{f'@{eu.username}' if eu.username else eu.mention_html()}\n\n~ {buyer_tag} and {seller_tag}\nare requested to drop the\nvouch before leaving 👇🏻\n\n<code>Vouch @chikuescrowservice for {amt_disp} smooth escrow deal</code>",
+        parse_mode="HTML"
+    )
     try:
         await c.bot.pin_chat_message(chat_id=cid, message_id=sm.message_id, disable_notification=True)
         LATEST_PINNED_MSG_ID = sm.message_id
@@ -166,10 +225,16 @@ async def hold_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     cid, rep = u.effective_chat.id, u.message.reply_to_message
     rep_mid = rep.message_id if rep else None
     did = (extract_f(rep.text or rep.caption).get("deal_id") if rep and (rep.text or rep.caption) else None) or LATEST_ACTIVE_DEAL or "UNKNOWN"
-    if did in DEALS_DB: DEALS_DB[did]["status"] = "ON HOLD"; rep_mid = DEALS_DB[did].get("msg_id", rep_mid)
+    if did in DEALS_DB:
+        DEALS_DB[did]["status"] = "ON HOLD"
+        rep_mid = DEALS_DB[did].get("msg_id", rep_mid)
     await unpin_old(c, cid, rep_mid)
     rsn = " ".join(c.args) if c.args else "Verification / Dispute Under Review"
-    sm = await c.bot.send_message(chat_id=cid, text=f"⏳ <b>DEAL ON HOLD</b>\n━━━━━━━━━━━━━━━━━━━\n🪪 <b>Deal ID:</b> {did}\n⚠️ <b>Reason:</b> {rsn}\n👤 <b>Action By:</b> {u.effective_user.mention_html()}\n\n🔒 <i>Payment release is paused until further update.</i>", parse_mode="HTML")
+    sm = await c.bot.send_message(
+        chat_id=cid,
+        text=f"⏳ <b>DEAL ON HOLD</b>\n━━━━━━━━━━━━━━━━━━━\n🪪 <b>Deal ID:</b> {did}\n⚠️ <b>Reason:</b> {rsn}\n👤 <b>Action By:</b> {u.effective_user.mention_html()}\n\n🔒 <i>Payment release is paused until further update.</i>",
+        parse_mode="HTML"
+    )
     try:
         await c.bot.pin_chat_message(chat_id=cid, message_id=sm.message_id, disable_notification=True)
         LATEST_PINNED_MSG_ID = sm.message_id
@@ -184,10 +249,17 @@ async def cancel_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     f = extract_f(rep.text or rep.caption) if rep and (rep.text or rep.caption) else {}
     did = f.get("deal_id") or LATEST_ACTIVE_DEAL or "UNKNOWN"
     seller, buyer, amt_str = f.get("seller", ""), f.get("buyer", ""), f.get("amount", "")
-    if did in DEALS_DB: DEALS_DB[did]["status"] = "CANCELLED"; seller, buyer, amt_str, rep_mid = DEALS_DB[did]["seller"], DEALS_DB[did]["buyer"], str(DEALS_DB[did]["amount"]), DEALS_DB[did].get("msg_id", rep_mid)
+    if did in DEALS_DB:
+        DEALS_DB[did]["status"] = "CANCELLED"
+        seller, buyer, amt_str = DEALS_DB[did]["seller"], DEALS_DB[did]["buyer"], str(DEALS_DB[did]["amount"])
+        rep_mid = DEALS_DB[did].get("msg_id", rep_mid)
     await unpin_old(c, cid, rep_mid)
     amt_num = parse_amt(amt_str)
-    sm = await c.bot.send_message(chat_id=cid, text=f"❌ <b>DEAL CANCELLED</b>\n━━━━━━━━━━━━━━━━━━━\n🪪 <b>Deal ID:</b> {did}\n💰 <b>Amount:</b> {f'₹{amt_num:,.0f}' if amt_num > 0 else 'N/A'}\n👤 <b>Seller:</b> {seller.split()[0] if seller else '@Seller'}\n👤 <b>Buyer:</b> {buyer.split()[0] if buyer else '@Buyer'}\n⚠️ <b>Reason:</b> {' '.join(c.args) if c.args else 'Mutual Agreement'}\n👤 <b>Action By:</b> {u.effective_user.mention_html()}", parse_mode="HTML")
+    sm = await c.bot.send_message(
+        chat_id=cid,
+        text=f"❌ <b>DEAL CANCELLED</b>\n━━━━━━━━━━━━━━━━━━━\n🪪 <b>Deal ID:</b> {did}\n💰 <b>Amount:</b> {f'₹{amt_num:,.0f}' if amt_num > 0 else 'N/A'}\n👤 <b>Seller:</b> {seller.split()[0] if seller else '@Seller'}\n👤 <b>Buyer:</b> {buyer.split()[0] if buyer else '@Buyer'}\n⚠️ <b>Reason:</b> {' '.join(c.args) if c.args else 'Mutual Agreement'}\n👤 <b>Action By:</b> {u.effective_user.mention_html()}",
+        parse_mode="HTML"
+    )
     try:
         await c.bot.pin_chat_message(chat_id=cid, message_id=sm.message_id, disable_notification=True)
         LATEST_PINNED_MSG_ID = sm.message_id
@@ -201,11 +273,19 @@ async def refund_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     cid, rep = u.effective_chat.id, u.message.reply_to_message
     rep_mid = rep.message_id if rep else None
     f = extract_f(rep.text or rep.caption) if rep and (rep.text or rep.caption) else {}
-    did, buyer, amt_str = f.get("deal_id") or LATEST_ACTIVE_DEAL or "N/A", f.get("buyer", ""), f.get("amount", "")
-    if did in DEALS_DB: DEALS_DB[did]["status"] = "REFUNDED"; buyer, amt_str, rep_mid = DEALS_DB[did]["buyer"], str(DEALS_DB[did]["amount"]), DEALS_DB[did].get("msg_id", rep_mid)
+    did = f.get("deal_id") or LATEST_ACTIVE_DEAL or "N/A"
+    buyer, amt_str = f.get("buyer", ""), f.get("amount", "")
+    if did in DEALS_DB:
+        DEALS_DB[did]["status"] = "REFUNDED"
+        buyer, amt_str = DEALS_DB[did]["buyer"], str(DEALS_DB[did]["amount"])
+        rep_mid = DEALS_DB[did].get("msg_id", rep_mid)
     await unpin_old(c, cid, rep_mid)
     amt_num = parse_amt(amt_str)
-    sm = await c.bot.send_message(chat_id=cid, text=f"↩️ <b>ESCROW REFUND PROCESSED</b>\n━━━━━━━━━━━━━━━━━━━\n🪪 <b>Deal ID:</b> {did}\n👤 <b>Refund To:</b> {buyer.split()[0] if buyer else '@Buyer'}\n💰 <b>Amount:</b> {f'₹{amt_num:,.0f}' if amt_num > 0 else 'Deal Amount'}\n👤 <b>Escrower:</b> {u.effective_user.mention_html()}\n\n⚠️ <i>Escrow fees non-refundable as per policy.</i>", parse_mode="HTML")
+    sm = await c.bot.send_message(
+        chat_id=cid,
+        text=f"↩️ <b>ESCROW REFUND PROCESSED</b>\n━━━━━━━━━━━━━━━━━━━\n🪪 <b>Deal ID:</b> {did}\n👤 <b>Refund To:</b> {buyer.split()[0] if buyer else '@Buyer'}\n💰 <b>Amount:</b> {f'₹{amt_num:,.0f}' if amt_num > 0 else 'Deal Amount'}\n👤 <b>Escrower:</b> {u.effective_user.mention_html()}\n\n⚠️ <i>Escrow fees non-refundable as per policy.</i>",
+        parse_mode="HTML"
+    )
     try:
         await c.bot.pin_chat_message(chat_id=cid, message_id=sm.message_id, disable_notification=True)
         LATEST_PINNED_MSG_ID = sm.message_id
@@ -220,6 +300,7 @@ async def status_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not did and c.args: did = extract_f(" ".join(c.args)).get("deal_id") or re.sub(r"\s+", "", " ".join(c.args).upper().replace("_", "-"))
     if not did and LATEST_ACTIVE_DEAL: did = LATEST_ACTIVE_DEAL
     if not did: await u.message.reply_text("⚠️ Deal slip par <b>Reply</b> karke <code>/status</code> likhein!", parse_mode="HTML"); return
+    
     if did in DEALS_DB:
         d = DEALS_DB[did]
         amt_disp = f"₹{d.get('amount', 0.0):,.0f}" if d.get('amount', 0.0) > 0 else "Deal Amount"
@@ -242,7 +323,9 @@ async def admin_hold_cmd(u: Update, c: ContextTypes.DEFAULT_TYPE):
     hd = {k: v for k, v in DEALS_DB.items() if v["status"] in ["ACTIVE", "ON HOLD"]}
     if not hd: await u.message.reply_text("🛡️ <b>ADMIN HOLD</b>\n\nAbhi koi active hold deal nahi hai.", parse_mode="HTML"); return
     ag, gtot = {}, 0.0
-    for did, info in hd.items(): ag.setdefault(info.get("escrower", "Unknown Escrower"), []).append((did, info)); gtot += info["amount"]
+    for did, info in hd.items():
+        ag.setdefault(info.get("escrower", "Unknown Escrower"), []).append((did, info))
+        gtot += info["amount"]
     out = ["🛡️ <b>ADMIN HOLD</b>\n"]
     for adm, deals in ag.items():
         out.append(f"🛡️ <b>{adm}</b> — Total Hold: ₹{sum(d[1]['amount'] for d in deals):,.2f}")
@@ -281,9 +364,4 @@ async def handle_txt(u: Update, c: ContextTypes.DEFAULT_TYPE):
 if __name__ == '__main__':
     threading.Thread(target=run_web, daemon=True).start()
     app = ApplicationBuilder().token(BOT_TOKEN).build()
-    for k, fn in [("form", form), ("fee", fee_command), ("fees", fee_command), ("deal", start_deal), ("close", close_deal), ("hold", hold_deal), ("cancel", cancel_deal), ("refund", refund_deal), ("status", status_deal), ("stats", stats_cmd), ("adminhold", admin_hold_cmd)]:
-        app.add_handler(CommandHandler(k, fn))
-    app.add_handler(MessageHandler(filters.StatusUpdate.PINNED_MESSAGE, purge_pinned_service_msg))
-    app.add_handler(MessageHandler(filters.UpdateType.EDITED_MESSAGE, handle_edited_msg))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_txt))
-    app.run_polling(drop_pending_updates=True)
+    for k, fn in [("form", form), ("fee", fee_command), ("fees", fee_command), ("
