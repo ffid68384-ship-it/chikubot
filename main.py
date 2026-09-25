@@ -14,7 +14,9 @@ def run_web():
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8938665546:AAH-1KMv8sD33fEXGPGYWmLkA9ZYIxfKJ8I")
 OWNER_ID = 7364435907
 DEALS_DB, STATS = {}, {"deals": 0, "vol": 0.0, "fees": 0.0}
-DEAL_CTR, CURR_DEAL, LAST_PIN = 11244, None, None
+
+# Series fixed to start from 11250
+DEAL_CTR, CURR_DEAL, LAST_PIN = 11250, None, None
 
 async def is_admin(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not u.effective_user:
@@ -63,9 +65,14 @@ def parse_escrow_form(raw):
         return data
 
     cleaned_full = normalize_text(raw)
-    m_id = re.search(r"dl[-_ ]*chiku[-_ ]*\d+", cleaned_full)
+    
+    m_id = re.search(r"dl[-_ ]*chiku[-_ ]*(\d+)", cleaned_full, re.I)
     if m_id:
-        data["id"] = re.sub(r"\s+", "", m_id.group(0).upper().replace("_", "-"))
+        data["id"] = f"DL-CHIKU-{m_id.group(1)}"
+    else:
+        m_raw_id = re.search(r"dl[-_ ]*chiku[-_ ]*(\d+)", raw, re.I)
+        if m_raw_id:
+            data["id"] = f"DL-CHIKU-{m_raw_id.group(1)}"
 
     raw_lines = raw.split('\n')
     clean_lines = cleaned_full.split('\n')
@@ -216,6 +223,8 @@ async def cmd_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     amt = f["amount"]
     fee_val, _, fee_tag, _ = calc_fee(amt)
     fee_line = f"\n\nFees {fee_tag}" if amt > 0 else ""
+    
+    # Sequential increment from 11250 onwards
     did = f"DL-CHIKU-{DEAL_CTR}"
     DEAL_CTR += 1
     CURR_DEAL = did
@@ -264,7 +273,7 @@ async def cmd_received(u: Update, c: ContextTypes.DEFAULT_TYPE):
         if not seller: seller = DEALS_DB[did]["seller"]
         if not buyer: buyer = DEALS_DB[did]["buyer"]
 
-    did = did or f"DL-CHIKU-{DEAL_CTR}"
+    did = did or CURR_DEAL or f"DL-CHIKU-{DEAL_CTR}"
     amt_lbl = f"₹{amt:,.0f}" if amt > 0 else "Deal Amount"
     s_tag = seller.split()[0] if seller else "@Seller"
     b_tag = buyer.split()[0] if buyer else "@Buyer"
@@ -289,6 +298,7 @@ async def cmd_close(u: Update, c: ContextTypes.DEFAULT_TYPE):
     rep = u.message.reply_to_message
     did, amt, seller, buyer, r_mid = None, 0.0, "", "", None
 
+    # Priority 1: Extract directly from replied deal slip
     if rep and (rep.text or rep.caption):
         r_mid = rep.message_id
         raw_msg = rep.text or rep.caption
@@ -304,13 +314,16 @@ async def cmd_close(u: Update, c: ContextTypes.DEFAULT_TYPE):
             if not seller: seller = DEALS_DB[did].get("seller", "")
             if not buyer: buyer = DEALS_DB[did].get("buyer", "")
 
-    if not did and CURR_DEAL and CURR_DEAL in DEALS_DB:
+    # Priority 2: Use last active deal
+    if not did and CURR_DEAL:
         did = CURR_DEAL
-        if amt == 0.0: amt = DEALS_DB[did]["amount"]
-        if not seller: seller = DEALS_DB[did]["seller"]
-        if not buyer: buyer = DEALS_DB[did]["buyer"]
-        r_mid = DEALS_DB[did].get("msg_id")
+        if did in DEALS_DB:
+            if amt == 0.0: amt = DEALS_DB[did]["amount"]
+            if not seller: seller = DEALS_DB[did]["seller"]
+            if not buyer: buyer = DEALS_DB[did]["buyer"]
+            r_mid = DEALS_DB[did].get("msg_id")
 
+    # Priority 3: Manual override
     if c.args:
         num = re.sub(r'[^\d\.]', '', c.args[0])
         if num and float(num) > 0:
@@ -318,7 +331,7 @@ async def cmd_close(u: Update, c: ContextTypes.DEFAULT_TYPE):
 
     s_tag = seller.split()[0] if seller else "@Seller"
     b_tag = buyer.split()[0] if buyer else "@Buyer"
-    did = did or f"DL-CHIKU-{DEAL_CTR}"
+    did = did or CURR_DEAL or f"DL-CHIKU-{DEAL_CTR}"
     eu = u.effective_user
 
     STATS["deals"] += 1
@@ -419,7 +432,6 @@ async def cmd_adminhold(u: Update, c: ContextTypes.DEFAULT_TYPE):
     await u.message.reply_text("\n".join(out), parse_mode="HTML")
 
 async def cmd_stats(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    # Stats is public - koi bhi dekh sakta hai
     await u.message.reply_text(
         f"📈 <b>@CHIKUESCROWSERVICE STATS</b>\n━━━━━━━━━━━━━━━━━━━\n"
         f"🤝 <b>Total Deals:</b> {STATS['deals']}\n"
@@ -505,9 +517,4 @@ def main():
     
     app.add_handler(MessageHandler(filters.StatusUpdate.PINNED_MESSAGE, clean_pin_service))
     app.add_handler(MessageHandler(filters.UpdateType.EDITED_MESSAGE, check_edit))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_router))
-    app.run_polling(drop_pending_updates=True)
-
-if __name__ == '__main__':
-    main()
-                                                      
+    app.add_handler(MessageHandler(f
