@@ -10,7 +10,8 @@ def home(): return "Bot Running 24/7"
 def run_web():
     web_app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
 
-BOT_TOKEN = "8938665546:AAGvZElRJ36ji3LP7qyG4W90vC2ZFIQRKJY"
+# Naya Revoked Bot Token
+BOT_TOKEN = "8938665546:AAFz121wlq59_UvVIAWlapHfh58q_Uq7b1E"
 OWNER_ID = 7364435907
 PROOF_CHANNEL = ""
 
@@ -307,7 +308,6 @@ async def stats_cmd(u: Update, c: ContextTypes.DEFAULT_TYPE):
 
 # 🛡️ ADMIN HOLD TRACKER (OWNER-ONLY LOCK)
 async def admin_hold_cmd(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    # Sirf Owner access kar sakta hai
     if u.effective_user.id != OWNER_ID:
         await u.message.reply_text("❌ Yeh command sirf Bot Owner (@CHIKUNXT) hi dekh sakta hai.")
         return
@@ -410,4 +410,4 @@ if __name__ == '__main__':
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_txt))
     
     app.run_polling()
-    
+        
