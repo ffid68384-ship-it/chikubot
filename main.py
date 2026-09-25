@@ -12,12 +12,14 @@ def run_web():
     web_app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8938665546:AAH-1KMv8sD33fEXGPGYWmLkA9ZYIxfKJ8I")
-OWNER_ID, DB_FILE, LAST_PIN = 7364435907, "escrow.db", None
+OWNER_ID = 7364435907
+DB_FILE = "escrow.db"
+LAST_PIN = None
 
-def db_run(q, p=(), fetch=None):
+def db_run(query, params=(), fetch=None):
     with sqlite3.connect(DB_FILE) as conn:
         c = conn.cursor()
-        c.execute(q, p)
+        c.execute(query, params)
         res = c.fetchall() if fetch == "all" else (c.fetchone() if fetch == "one" else None)
         conn.commit()
         return res
@@ -47,7 +49,9 @@ async def is_owner(u: Update, c: ContextTypes.DEFAULT_TYPE):
         if u.effective_chat and u.effective_chat.type in ["group", "supergroup"]:
             try:
                 admins = await c.bot.get_chat_administrators(u.effective_chat.id)
-                return any(a.status == "creator" and a.user.id == OWNER_ID for a in admins)
+                for a in admins:
+                    if a.status == "creator" and a.user.id == OWNER_ID:
+                        return True
             except:
                 pass
         return False
@@ -399,40 +403,4 @@ async def check_edit(u: Update, c: ContextTypes.DEFAULT_TYPE):
 
 async def text_router(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not u.message or not u.message.text:
-        return
-    t = u.message.text.strip().lower()
-        raw = t.split('@')[0]
-    if raw in ["form", ".form"]: await cmd_form(u, c)
-    elif raw in ["fee", "fees", ".fee", ".fees"]: await cmd_fee(u, c)
-    elif raw in ["stats", ".stats"]: await cmd_stats(u, c)
-    elif raw in ["leaderboard", ".leaderboard", "/leaderboard"]: await cmd_leaderboard(u, c)
-    elif raw in ["adminhold", ".adminhold"]: await cmd_adminhold(u, c)
-    elif raw in ["refund", ".refund"]: await cmd_refund(u, c)
-    elif raw in ["received", ".received", "recieved", ".recieved", "receive", ".receive", "recive", ".recive"]: await cmd_received(u, c)
-    m = re.match(r"^(?:fee|fees|\.fee|\.fees|\/fee|\/fees)\s+([^\s]+)", t)
-    if m:
-        n = re.sub(r'[^\d\.]', '', m.group(1))
-        if n and float(n) > 0: await send_c(u, float(n))
-
-def main():
-    threading.Thread(target=run_web, daemon=True).start()
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("form", cmd_form))
-    app.add_handler(CommandHandler("fee", cmd_fee))
-    app.add_handler(CommandHandler("fees", cmd_fee))
-    app.add_handler(CommandHandler("deal", cmd_deal))
-    app.add_handler(CommandHandler("close", cmd_close))
-    app.add_handler(CommandHandler("cancel", cmd_cancel))
-    app.add_handler(CommandHandler("refund", cmd_refund))
-    app.add_handler(CommandHandler("hold", cmd_hold))
-    app.add_handler(CommandHandler("adminhold", cmd_adminhold))
-    app.add_handler(CommandHandler("leaderboard", cmd_leaderboard))
-    app.add_handler(CommandHandler("stats", cmd_stats))
-    for r_cmd in ["received", "recieved", "receive", "recive"]:
-        app.add_handler(CommandHandler(r_cmd, cmd_received))
-    app.add_handler(MessageHandler(filters.UpdateType.EDITED_MESSAGE, check_edit))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_router))
-    app.run_polling(drop_pending_updates=True)
-
-if __name__ == '__main__':
-    main()
+        
