@@ -25,22 +25,21 @@ async def is_admin(u: Update, c: ContextTypes.DEFAULT_TYPE):
     except:
         return False
 
-def clean_txt(t):
-    if not t:
+# Complete Universal Transliteration for Fancy Small-Caps & Cyrillic Fonts
+UNICODE_MAP = {
+    'ɢ':'g', 'ɪ':'i', 'ɴ':'n', 'ʀ':'r', 'ʏ':'y', 'ʙ':'b', 'ʜ':'h', 'ʟ':'l', 'ꜱ':'s',
+    'ғ':'f', 'ᴀ':'a', 'ᴄ':'c', 'ᴅ':'d', 'ᴇ':'e', 'ᴋ':'k', 'ᴍ':'m', 'ᴏ':'o', 'ᴘ':'p',
+    'ᴛ':'t', 'ᴜ':'u', 'ᴡ':'w', 'ᴊ':'j', 'ǫ':'q', 'ᴠ':'v', 'ᴢ':'z', '𝖴':'u', 'U':'u',
+    'O':'o', 'О':'o', 'а':'a', 'е':'e', 'о':'o', 'р':'p', 'с':'c', 'у':'y', 'х':'x',
+    'м':'m', 'н':'n', 'т':'t', 'в':'b', 'к':'k', 'г':'r', 'і':'i'
+}
+
+def normalize_text(text):
+    if not text:
         return ""
-    trans_table = {
-        0x1D00: 'a', 0x1D01: 'b', 0x1D02: 'b', 0x1D03: 'b', 0x1D04: 'c', 0x1D05: 'd',
-        0x1D06: 'd', 0x1D07: 'e', 0x1D08: 'e', 0x1D09: 'i', 0x1D0A: 'j', 0x1D0B: 'k',
-        0x1D0C: 'l', 0x1D0D: 'm', 0x1D0E: 'm', 0x1D0F: 'o', 0x1D10: 'o', 0x1D11: 'o',
-        0x1D12: 'o', 0x1D13: 'o', 0x1D14: 'o', 0x1D15: 'u', 0x1D18: 'p', 0x1D19: 'r',
-        0x1D1A: 'r', 0x1D1B: 't', 0x1D1C: 'u', 0x1D1D: 'u', 0x1D1E: 'u', 0x1D1F: 'm',
-        0x1D20: 'v', 0x1D21: 'w', 0x1D22: 'z',
-        ord('а'): 'a', ord('е'): 'e', ord('о'): 'o', ord('р'): 'p', ord('с'): 'c',
-        ord('у'): 'y', ord('х'): 'x', ord('м'): 'm', ord('н'): 'n', ord('т'): 't',
-        ord('ꜱ'): 's', ord('ғ'): 'f', ord('ᴜ'): 'u'
-    }
-    t = unicodedata.normalize('NFKD', str(t)).translate(trans_table)
-    return t.lower()
+    decomposed = unicodedata.normalize('NFKD', str(text))
+    res = [UNICODE_MAP.get(ch, ch) for ch in decomposed]
+    return "".join(res).lower()
 
 def calc_fee(amt):
     if amt <= 0:
@@ -55,61 +54,73 @@ def calc_fee(amt):
     f = round(amt * 0.03, 2)
     return f, "3%", f"3% - {round(f)}₹", amt - f
 
-def parse_form_final(raw):
+def parse_escrow_form(raw):
     data = {"seller": "", "buyer": "", "details": "", "amount": 0.0, "till": "", "id": ""}
     if not raw:
         return data
 
-    norm_all = clean_txt(raw)
-    dm = re.search(r"dl[-_ ]*chiku[-_ ]*\d+", norm_all)
-    if dm:
-        data["id"] = re.sub(r"\s+", "", dm.group(0).upper().replace("_", "-"))
+    cleaned_full = normalize_text(raw)
 
-    lines = raw.split("\n")
-    for i, line in enumerate(lines):
-        line_clean = clean_txt(line).strip()
-        if not line_clean:
+    # 1. Trade ID
+    m_id = re.search(r"dl[-_ ]*chiku[-_ ]*\d+", cleaned_full)
+    if m_id:
+        data["id"] = re.sub(r"\s+", "", m_id.group(0).upper().replace("_", "-"))
+
+    raw_lines = raw.split('\n')
+    clean_lines = cleaned_full.split('\n')
+
+    # Line by Line dual scanning (Preserves Original Usernames & Strips Font Mismatch)
+    for i, (r_line, c_line) in enumerate(zip(raw_lines, clean_lines)):
+        c_str = c_line.strip()
+        if not c_str:
             continue
 
-        if ":" in line:
-            val = line.split(":", 1)[1].strip()
-        elif "-" in line:
-            val = line.split("-", 1)[1].strip()
+        if ':' in r_line:
+            val = r_line.split(':', 1)[1].strip()
+            c_val = c_line.split(':', 1)[1].strip()
+            label = c_line.split(':', 1)[0].strip()
+        elif '-' in r_line:
+            val = r_line.split('-', 1)[1].strip()
+            c_val = c_line.split('-', 1)[1].strip()
+            label = c_line.split('-', 1)[0].strip()
         else:
-            val = ""
+            continue
 
-        # Remove bullet characters from val
-        val = re.sub(r'^[•\*\-\s]+', '', val).strip()
+        label = re.sub(r'^[•\*\-\s]+', '', label).strip()
 
-        if "seller" in line_clean and not data["seller"]:
-            data["seller"] = val
-        elif "buyer" in line_clean and not data["buyer"]:
-            data["buyer"] = val
-        elif any(k in line_clean for k in ["details", "deatails", "detail"]) and not data["details"]:
-            data["details"] = val
-            # Check next line if details continue
-            if i + 1 < len(lines):
-                nxt = clean_txt(lines[i+1]).strip()
-                if nxt and not any(w in nxt for w in ["amount", "amt", "till", "seller", "buyer", "escrow", "fees"]):
-                    data["details"] += " " + lines[i+1].strip()
-        elif any(k in line_clean for k in ["amount", "amt", "price", "cost", "paisa"]):
-            # Extract numbers from this line
-            m_num = re.search(r'(\d+(?:\.\d+)?)', clean_txt(val or line).replace(',', ''))
-            if m_num:
-                data["amount"] = float(m_num.group(1))
-        elif "till" in line_clean and not data["till"]:
-            data["till"] = val
+        # Seller
+        if (label in ['seller', 's'] or label.endswith(' seller')) and not data['seller']:
+            data['seller'] = val
+        # Buyer
+        elif (label in ['buyer', 'b'] or label.endswith(' buyer')) and not data['buyer']:
+            data['buyer'] = val
+        # Deal Details
+        elif any(k in label for k in ['detail', 'deatail']) and not data['details']:
+            data['details'] = val
+            # Attach multiline continuation if present
+            if i + 1 < len(raw_lines):
+                nxt = clean_lines[i+1].strip()
+                if nxt and not any(k in nxt for k in ['•', '*', '-', ':', 'amount', 'amt', 'till', 'escrow', 'seller', 'buyer', 'for ']):
+                    data['details'] += " " + raw_lines[i+1].strip()
+        # Deal Amount
+        elif any(k in label for k in ['amount', 'amt', 'price', 'cost']) and data['amount'] == 0.0:
+            m = re.search(r'(\d+(?:\.\d+)?)', c_val.replace(',', ''))
+            if m:
+                data['amount'] = float(m.group(1))
+        # Escrow Till
+        elif 'till' in label and not data['till']:
+            data['till'] = val
 
-    # Direct fallback if amount is still 0
-    if data["amount"] == 0.0:
-        no_users = re.sub(r'@\w+', '', norm_all).replace(',', '')
-        m_amt = re.search(r'(?:amount|amt|price)[\s\:\-]*(\d+(?:\.\d+)?)', no_users)
+    # Direct Fallbacks if somehow missing
+    if data['amount'] == 0.0:
+        no_users = re.sub(r'@\w+', '', cleaned_full).replace(',', '')
+        m_amt = re.search(r'(?:amount|amt|price)[\s\:\-]*[₹rs\s]*(\d+(?:\.\d+)?)', no_users)
         if m_amt:
-            data["amount"] = float(m_amt.group(1))
+            data['amount'] = float(m_amt.group(1))
         else:
             m_curr = re.search(r'[₹rs]\s*(\d+(?:\.\d+)?)', no_users)
             if m_curr:
-                data["amount"] = float(m_curr.group(1))
+                data['amount'] = float(m_curr.group(1))
 
     return data
 
@@ -199,9 +210,9 @@ async def cmd_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
         pass
 
     raw_text = rep.text or rep.caption
-    f = parse_form_final(raw_text)
+    f = parse_escrow_form(raw_text)
 
-    # Optional manual override: /deal 1150
+    # Optional manual amount override: /deal 1150
     if c.args:
         num = re.sub(r'[^\d\.]', '', c.args[0])
         if num:
@@ -246,7 +257,7 @@ async def cmd_received(u: Update, c: ContextTypes.DEFAULT_TYPE):
     did, amt, seller, buyer = None, 0.0, "", ""
 
     if rep and (rep.text or rep.caption):
-        f = parse_form_final(rep.text or rep.caption)
+        f = parse_escrow_form(rep.text or rep.caption)
         did = f["id"]
         if did and did in DEALS_DB:
             amt = DEALS_DB[did]["amount"]
@@ -290,7 +301,7 @@ async def cmd_close(u: Update, c: ContextTypes.DEFAULT_TYPE):
 
     if rep and (rep.text or rep.caption):
         r_mid = rep.message_id
-        f = parse_form_final(rep.text or rep.caption)
+        f = parse_escrow_form(rep.text or rep.caption)
         did = f["id"]
         if did and did in DEALS_DB:
             amt = DEALS_DB[did]["amount"]
