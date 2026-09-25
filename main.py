@@ -26,10 +26,15 @@ async def is_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except: return False
 
 def norm_txt(t):
-    t = unicodedata.normalize('NFKD', t)
-    for k, v in {'ꜱ':'s','ᴇ':'e','ʟ':'l','ʀ':'r','ʙ':'b','ᴜ':'u','ʏ':'y','ᴅ':'d','ᴀ':'a','ᴛ':'t','ɪ':'i','ᴏ':'o','ᴡ':'w'}.items():
-        t = t.replace(k, v)
-    return t
+    if not t: return ""
+    t = unicodedata.normalize('NFKD', str(t))
+    conv = {'ꜱ':'s','s':'s','ᴇ':'e','e':'e','ʟ':'l','l':'l','ʀ':'r','r':'r','ʙ':'b','b':'b',
+            'ᴜ':'u','u':'u','ʏ':'y','y':'y','ᴅ':'d','d':'d','ᴀ':'a','a':'a','ᴛ':'t','t':'t',
+            'ɪ':'i','i':'i','ᴏ':'o','o':'o','ᴡ':'w','w':'w'}
+    res = []
+    for ch in t:
+        res.append(conv.get(ch, ch))
+    return "".join(res)
 
 def get_fee(amt):
     if amt <= 190: f, r, d = 10.0, "Flat ₹10", "Rs 10"
@@ -46,32 +51,39 @@ def parse_amt(val):
     n = float(m.group(1))
     return n * 1000 if m.group(3) else n
 
-def extract_f(t):
-    n = norm_txt(t)
+def extract_f(raw_text):
+    n = norm_txt(raw_text)
     f = {"seller": "", "buyer": "", "details": "", "amount": "", "till": "SECURE", "deal_id": ""}
-    im = re.search(r"(?:deal\s*id|trade\s*id)\s*[:\-]?\s*([A-Za-z0-9\-]+)", n, re.I)
-    if im: f["deal_id"] = im.group(1).strip()
     
-    for l in n.splitlines():
-        cl = re.sub(r'^[•\-\*\s]+', '', l).strip()
-        m = re.match(r"^(seller|buyer|deal\s*details|deal\s*deatails|details|deal\s*amount|amount|escrow\s*till|till)\s*[:\-]\s*(.*)$", cl, re.I)
-        if m:
-            k, v = m.group(1).lower().replace(" ",""), m.group(2).strip()
-            if "seller" in k and not f["seller"]: f["seller"] = v
-            elif "buyer" in k and not f["buyer"]: f["buyer"] = v
-            elif "detail" in k and not f["details"]: f["details"] = v
-            elif "amount" in k and not f["amount"]: f["amount"] = v
-            elif "till" in k and v: f["till"] = v
+    # Deal ID detection
+    dm = re.search(r"DL[-_]CHIKU[-_]\d+", n, re.I)
+    if dm:
+        f["deal_id"] = dm.group(0).upper().replace("_", "-")
 
-    if not f["seller"]:
-        sm = re.search(r"seller\s*[:\-]\s*([^\n\r]+)", n, re.I)
-        if sm: f["seller"] = sm.group(1).strip()
-    if not f["buyer"]:
-        bm = re.search(r"buyer\s*[:\-]\s*([^\n\r]+)", n, re.I)
-        if bm: f["buyer"] = bm.group(1).strip()
-    if not f["amount"]:
-        am = re.search(r"(?:deal\s*amount|amount)\s*[:\-]\s*([^\n\r]+)", n, re.I)
-        if am: f["amount"] = am.group(1).strip()
+    # Seller detection
+    sm = re.search(r"seller\s*[:\-]\s*([^\n\r]+)", n, re.I)
+    if sm:
+        f["seller"] = sm.group(1).strip()
+
+    # Buyer detection
+    bm = re.search(r"buyer\s*[:\-]\s*([^\n\r]+)", n, re.I)
+    if bm:
+        f["buyer"] = bm.group(1).strip()
+
+    # Amount detection
+    am = re.search(r"(?:deal\s*amount|amount)\s*[:\-]\s*([^\n\r]+)", n, re.I)
+    if am:
+        f["amount"] = am.group(1).strip()
+
+    # Details detection
+    dtm = re.search(r"(?:deal\s*details|deal\s*deatails|details)\s*[:\-]\s*([^\n\r]+)", n, re.I)
+    if dtm:
+        f["details"] = dtm.group(1).strip()
+
+    # Till detection
+    tm = re.search(r"(?:escrow\s*till|till)\s*[:\-]\s*([^\n\r]+)", n, re.I)
+    if tm:
+        f["till"] = tm.group(1).strip()
 
     return f
 
@@ -182,21 +194,33 @@ async def close_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
         raw = rep.text or rep.caption
         f = extract_f(raw)
         
-        if f["deal_id"]: did = f["deal_id"]
-        if f["amount"]: amt_str = f["amount"]
+        did = f["deal_id"]
         
-        if f["seller"]:
-            s_match = re.search(r"@([A-Za-z0-9_]+)", f["seller"])
-            seller = f"@{s_match.group(1)}" if s_match else f["seller"].split()[0]
-        if f["buyer"]:
-            b_match = re.search(r"@([A-Za-z0-9_]+)", f["buyer"])
-            buyer = f"@{b_match.group(1)}" if b_match else f["buyer"].split()[0]
+        # Agar DB me mil gayi toh exact data wahan se utha lo
+        if did and did in DEALS_DB:
+            d = DEALS_DB[did]
+            amt_str = str(d["amount"])
+            seller = d["seller"]
+            buyer = d["buyer"]
+        else:
+            if f["amount"]: amt_str = f["amount"]
+            if f["seller"]: seller = f["seller"]
+            if f["buyer"]: buyer = f["buyer"]
 
     if len(c.args) >= 1 and not amt_str: amt_str = c.args[0]
     if len(c.args) >= 2 and not buyer: buyer = c.args[1]
     if len(c.args) >= 3 and not seller: seller = c.args[2]
 
     amt_num = parse_amt(amt_str)
+    
+    # Normalize buyer/seller format
+    if seller:
+        sm = re.search(r"@([A-Za-z0-9_]+)", seller)
+        seller = f"@{sm.group(1)}" if sm else seller.split()[0]
+    if buyer:
+        bm = re.search(r"@([A-Za-z0-9_]+)", buyer)
+        buyer = f"@{bm.group(1)}" if bm else buyer.split()[0]
+
     if amt_num <= 0 or not buyer or not seller:
         await u.message.reply_text(
             "⚠️ Deal slip ka <b>Reply</b> karke <code>/close</code> likhein!\n"
@@ -251,13 +275,33 @@ async def cancel_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(u, c): return
     rep = u.message.reply_to_message
     if not rep or not (rep.text or rep.caption):
-        await u.message.reply_text("⚠️ Deal slip ka <b>Reply</b> karke <code>/cancel</code> likhein!", parse_mode="HTML")
+        await u.message.reply_text("⚠️ Deal slip ka <b>Reply</b> karke <code>/cancel [reason]</code> likhein!", parse_mode="HTML")
         return
     rsn = " ".join(c.args) if c.args else "Mutual Agreement"
     f = extract_f(rep.text or rep.caption)
     did = f["deal_id"] if f["deal_id"] else "UNKNOWN"
-    if did in DEALS_DB: DEALS_DB[did]["status"] = "CANCELLED"
-    txt = f"❌ <b>DEAL CANCELLED</b>\n━━━━━━━━━━━━━━━━━━━\n🪪 <b>Deal ID:</b> {did}\n⚠️ <b>Reason:</b> {rsn}\n👤 <b>Action By:</b> {u.effective_user.mention_html()}"
+    
+    seller, buyer, amt_str = f["seller"], f["buyer"], f["amount"]
+    if did in DEALS_DB:
+        DEALS_DB[did]["status"] = "CANCELLED"
+        seller = DEALS_DB[did]["seller"]
+        buyer = DEALS_DB[did]["buyer"]
+        amt_str = str(DEALS_DB[did]["amount"])
+
+    s_tag = seller.split()[0] if seller else "N/A"
+    b_tag = buyer.split()[0] if buyer else "N/A"
+    amt_num = parse_amt(amt_str)
+    amt_display = f"₹{amt_num:,.0f}" if amt_num > 0 else "N/A"
+
+    txt = (
+        f"❌ <b>DEAL CANCELLED</b>\n━━━━━━━━━━━━━━━━━━━\n"
+        f"🪪 <b>Deal ID:</b> {did}\n"
+        f"💰 <b>Amount:</b> {amt_display}\n"
+        f"👤 <b>Seller:</b> {s_tag}\n"
+        f"👤 <b>Buyer:</b> {b_tag}\n"
+        f"⚠️ <b>Reason:</b> {rsn}\n"
+        f"👤 <b>Action By:</b> {u.effective_user.mention_html()}"
+    )
     sm = await u.message.reply_text(txt, parse_mode="HTML")
     try: await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id)
     except: pass
@@ -270,11 +314,24 @@ async def refund_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
         return
     f = extract_f(rep.text or rep.caption)
     did = f["deal_id"] if f["deal_id"] else "N/A"
-    if did in DEALS_DB: DEALS_DB[did]["status"] = "REFUNDED"
+    buyer = f["buyer"]
+    amt_str = f["amount"]
+
+    if did in DEALS_DB:
+        DEALS_DB[did]["status"] = "REFUNDED"
+        buyer = DEALS_DB[did]["buyer"]
+        amt_str = str(DEALS_DB[did]["amount"])
+
+    b_tag = buyer.split()[0] if buyer else "Buyer"
+    amt_num = parse_amt(amt_str)
+
     txt = (
-        f"↩️ <b>ESCROW REFUND PROCESSED</b>\n━━━━━━━━━━━━━━━━━━━\n🪪 <b>Deal ID:</b> {did}\n"
-        f"👤 <b>Refund To:</b> {f['buyer'] or 'Buyer'}\n💰 <b>Amount:</b> ₹{parse_amt(f['amount']):,.0f}\n"
-        f"👤 <b>Escrower:</b> {u.effective_user.mention_html()}\n\n⚠️ <i>Escrow fees non-refundable as per policy.</i>"
+        f"↩️ <b>ESCROW REFUND PROCESSED</b>\n━━━━━━━━━━━━━━━━━━━\n"
+        f"🪪 <b>Deal ID:</b> {did}\n"
+        f"👤 <b>Refund To:</b> {b_tag}\n"
+        f"💰 <b>Amount:</b> ₹{amt_num:,.0f}\n"
+        f"👤 <b>Escrower:</b> {u.effective_user.mention_html()}\n\n"
+        f"⚠️ <i>Escrow fees non-refundable as per policy.</i>"
     )
     sm = await u.message.reply_text(txt, parse_mode="HTML")
     try: await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id)
@@ -355,6 +412,9 @@ async def handle_txt(u: Update, c: ContextTypes.DEFAULT_TYPE):
     elif tl.startswith("cancel") or tl.startswith(".cancel"):
         c.args = t.split()[1:]
         await cancel_deal(u, c); return
+    elif tl.startswith("refund") or tl.startswith(".refund"):
+        c.args = t.split()[1:]
+        await refund_deal(u, c); return
 
     fee_match = re.match(r"^(?:fee|fees|\.fee|\.fees|\/fee|\/fees)\s+([^\s]+)", tl)
     if fee_match:
@@ -387,4 +447,4 @@ if __name__ == '__main__':
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_txt))
     
     app.run_polling(drop_pending_updates=True)
-        
+    
