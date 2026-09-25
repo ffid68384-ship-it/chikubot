@@ -56,7 +56,6 @@ def calc_fee(amt):
 def get_amt(val):
     if not val:
         return 0.0
-    # Usernames aur IDs ko pehle hi hata do taaki @nexatrader78 ka 78 na pakde
     s = re.sub(r"@\w+", "", str(val))
     s = s.lower().replace("₹", "").replace(",", "").replace("rs", "").replace("inr", "")
     m = re.search(r"(\d+(?:\.\d+)?)(\s*k)?", s)
@@ -87,17 +86,22 @@ def parse_form(raw):
             data["buyer"] = val
         elif any(k in c_line for k in ["details", "deatails", "detail"]) and not data["details"]:
             data["details"] = val
-        # Check specifically for AMOUNT line
-        elif ("am" in c_line and "nt" in c_line) or "amt" in c_line or "price" in c_line:
-            if not data["amount"]:
-                # Is line me se directly number extract karo
-                num_match = re.search(r"(\d+)", val or line)
-                if num_match:
-                    data["amount"] = num_match.group(1)
-                else:
-                    data["amount"] = val
+        elif any(k in c_line for k in ["amount", "amt", "price", "amunt", "amont", "cost"]):
+            # Line se direct number capture karo bina kisi error ke
+            m_num = re.search(r"[₹rs\s]*(\d+(?:\.\d+)?)", val or line, re.I)
+            if m_num:
+                data["amount"] = m_num.group(1)
+            else:
+                data["amount"] = val
         elif "till" in c_line and not data["till"]:
             data["till"] = val
+
+    # Extra Fallback: Agar amount abhi bhi empty hai toh pure text me jahan ₹ laga hai use uthao
+    if not data["amount"] or data["amount"].upper() == "N/A":
+        pure_no_handles = re.sub(r"@\w+", "", raw)
+        m_curr = re.search(r"[₹rs]\s*(\d+(?:\.\d+)?)", pure_no_handles, re.I)
+        if m_curr:
+            data["amount"] = m_curr.group(1)
 
     return data
 
@@ -355,4 +359,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-        
+                    
