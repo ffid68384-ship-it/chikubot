@@ -13,7 +13,8 @@ def run_web():
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8938665546:AAH-1KMv8sD33fEXGPGYWmLkA9ZYIxfKJ8I")
 OWNER_ID = 7364435907
-DEALS_DB, STATS = {}, {"deals": 0, "vol": 0.0, "fees": 0.0}
+DEALS_DB = {}
+STATS = {"deals": 0, "vol": 0.0, "fees": 0.0}
 DEAL_CTR, CURR_DEAL, LAST_PIN = 11254, None, None
 
 async def is_admin(u: Update, c: ContextTypes.DEFAULT_TYPE):
@@ -379,10 +380,13 @@ async def cmd_adminhold(u: Update, c: ContextTypes.DEFAULT_TYPE):
     await u.message.reply_text("\n".join(out), parse_mode="HTML")
 
 async def cmd_stats(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    # Koi bhi check nahi - Sabhi ke liye open
     await u.message.reply_text(
         f"📈 <b>@CHIKUESCROWSERVICE STATS</b>\n━━━━━━━━━━━━━━━━━━━\n"
-        f"🤝 <b>Total Deals:</b> {STATS['deals']}\n💼 <b>Total Volume:</b> ₹{STATS['vol']:,.2f}\n"
-        f"💵 <b>Total Fees:</b> ₹{STATS['fees']:,.2f}\n📱 <b>RG :</b> @CHIKUNXT",
+        f"🤝 <b>Total Deals:</b> {STATS['deals']}\n"
+        f"💼 <b>Total Volume:</b> ₹{STATS['vol']:,.2f}\n"
+        f"💵 <b>Total Fees:</b> ₹{STATS['fees']:,.2f}\n"
+        f"📱 <b>RG :</b> @CHIKUNXT",
         parse_mode="HTML"
     )
 
@@ -403,9 +407,9 @@ async def text_router(u: Update, c: ContextTypes.DEFAULT_TYPE):
     t = u.message.text.strip().lower()
     if t in ["form", ".form"]: await cmd_form(u, c)
     elif t in ["fee", "fees", ".fee", ".fees"]: await cmd_fee(u, c)
-    elif t in ["stats", ".stats", "/stats"]: await cmd_stats(u, c)
-    elif t in ["adminhold", ".adminhold", "/adminhold"]: await cmd_adminhold(u, c)
-    elif t in ["refund", ".refund", "/refund"]: await cmd_refund(u, c)
+    elif t in ["stats", ".stats"]: await cmd_stats(u, c)
+    elif t in ["adminhold", ".adminhold"]: await cmd_adminhold(u, c)
+    elif t in ["refund", ".refund"]: await cmd_refund(u, c)
     elif t in ["received", ".received", "recieved", ".recieved", "receive", ".receive", "recive", ".recive"]:
         await cmd_received(u, c)
     m = re.match(r"^(?:fee|fees|\.fee|\.fees|\/fee|\/fees)\s+([^\s]+)", t)
@@ -417,16 +421,17 @@ def main():
     threading.Thread(target=run_web, daemon=True).start()
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     
-    for cmd in ["form"]: app.add_handler(CommandHandler(cmd, cmd_form))
-    for cmd in ["fee", "fees"]: app.add_handler(CommandHandler(cmd, cmd_fee))
-    for cmd in ["deal"]: app.add_handler(CommandHandler(cmd, cmd_deal))
+    app.add_handler(CommandHandler("form", cmd_form))
+    app.add_handler(CommandHandler("fee", cmd_fee))
+    app.add_handler(CommandHandler("fees", cmd_fee))
+    app.add_handler(CommandHandler("deal", cmd_deal))
     for cmd in ["received", "recieved", "receive", "recive"]: app.add_handler(CommandHandler(cmd, cmd_received))
-    for cmd in ["close"]: app.add_handler(CommandHandler(cmd, cmd_close))
-    for cmd in ["cancel"]: app.add_handler(CommandHandler(cmd, cmd_cancel))
-    for cmd in ["refund"]: app.add_handler(CommandHandler(cmd, cmd_refund))
-    for cmd in ["hold"]: app.add_handler(CommandHandler(cmd, cmd_hold))
-    for cmd in ["adminhold"]: app.add_handler(CommandHandler(cmd, cmd_adminhold))
-    for cmd in ["stats"]: app.add_handler(CommandHandler(cmd, cmd_stats))
+    app.add_handler(CommandHandler("close", cmd_close))
+    app.add_handler(CommandHandler("cancel", cmd_cancel))
+    app.add_handler(CommandHandler("refund", cmd_refund))
+    app.add_handler(CommandHandler("hold", cmd_hold))
+    app.add_handler(CommandHandler("adminhold", cmd_adminhold))
+    app.add_handler(CommandHandler("stats", cmd_stats))
     
     app.add_handler(MessageHandler(filters.UpdateType.EDITED_MESSAGE, check_edit))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_router))
@@ -434,4 +439,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-    
