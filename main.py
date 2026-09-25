@@ -5,12 +5,11 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, fil
 
 web_app = Flask(__name__)
 @web_app.route('/')
-def home(): return "Bot Running 24/7"
+def home(): return "Chiku Escrow Running 24/7"
 
 def run_web():
     web_app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
 
-# Naya Revoked Bot Token
 BOT_TOKEN = "8938665546:AAFz121wlq59_UvVIAWlapHfh58q_Uq7b1E"
 OWNER_ID = 7364435907
 PROOF_CHANNEL = ""
@@ -306,16 +305,14 @@ async def stats_cmd(u: Update, c: ContextTypes.DEFAULT_TYPE):
         parse_mode="HTML"
     )
 
-# 🛡️ ADMIN HOLD TRACKER (OWNER-ONLY LOCK)
 async def admin_hold_cmd(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if u.effective_user.id != OWNER_ID:
         await u.message.reply_text("❌ Yeh command sirf Bot Owner (@CHIKUNXT) hi dekh sakta hai.")
         return
 
     hold_deals = {did: info for did, info in DEALS_DB.items() if info["status"] in ["ACTIVE", "ON HOLD"]}
-    
     if not hold_deals:
-        await u.message.reply_text("🛡️ <b>ADMIN HOLD</b>\n\nAbhi koi active hold deal nahi hai. Sabhi deals completed ya cancelled hain.", parse_mode="HTML")
+        await u.message.reply_text("🛡️ <b>ADMIN HOLD</b>\n\nAbhi koi active hold deal nahi hai.", parse_mode="HTML")
         return
 
     admin_groups = {}
@@ -323,8 +320,7 @@ async def admin_hold_cmd(u: Update, c: ContextTypes.DEFAULT_TYPE):
 
     for did, info in hold_deals.items():
         admin = info.get("escrower", "Unknown Escrower")
-        if admin not in admin_groups:
-            admin_groups[admin] = []
+        if admin not in admin_groups: admin_groups[admin] = []
         admin_groups[admin].append((did, info))
         grand_total += info["amount"]
 
@@ -337,34 +333,22 @@ async def admin_hold_cmd(u: Update, c: ContextTypes.DEFAULT_TYPE):
             fee, rate, _, net = get_fee(amt)
             b_tag = d["buyer"].split()[0] if d["buyer"] else "@Buyer"
             s_tag = d["seller"].split()[0] if d["seller"] else "@Seller"
-            out.append(
-                f"  • <b>{did}</b> — ₹{amt:,.2f}\n"
-                f"    Buyer: {b_tag}\n"
-                f"    Seller: {s_tag}\n"
-                f"    Fee: {rate} — Net: ₹{net:,.2f}\n"
-                f"    Detail: {d.get('details', 'N/A')}"
-            )
+            out.append(f"  • <b>{did}</b> — ₹{amt:,.2f}\n    Buyer: {b_tag}\n    Seller: {s_tag}\n    Fee: {rate} — Net: ₹{net:,.2f}\n    Detail: {d.get('details', 'N/A')}")
         out.append("")
 
     out.append("──────────────────")
     out.append(f"🛡️ <b>ALL ADMINS TOTAL HOLD: ₹{grand_total:,.2f}</b>")
-
     await u.message.reply_text("\n".join(out), parse_mode="HTML")
 
-# Text Handler (Bina Slash Triggers)
 async def handle_txt(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not u.message or not u.message.text: return
     t = u.message.text.strip()
     tl = t.lower()
     
-    if tl in ["form", ".form"]:
-        await form(u, c); return
-    elif tl in ["fees", "fee", ".fee", ".fees"]:
-        await fee_command(u, c); return
-    elif tl in ["close", ".close"]:
-        await close_deal(u, c); return
-    elif tl in ["adminhold", ".adminhold"]:
-        await admin_hold_cmd(u, c); return
+    if tl in ["form", ".form"]: await form(u, c); return
+    elif tl in ["fees", "fee", ".fee", ".fees"]: await fee_command(u, c); return
+    elif tl in ["close", ".close"]: await close_deal(u, c); return
+    elif tl in ["adminhold", ".adminhold"]: await admin_hold_cmd(u, c); return
     elif tl.startswith("hold") or tl.startswith(".hold"):
         c.args = [] if tl in ["hold", ".hold"] else t.split()[1:]
         await hold_deal(u, c); return
@@ -375,21 +359,14 @@ async def handle_txt(u: Update, c: ContextTypes.DEFAULT_TYPE):
     fee_match = re.match(r"^(?:fee|fees|\.fee|\.fees|\/fee|\/fees)\s+([^\s]+)", tl)
     if fee_match:
         amt = parse_amt(fee_match.group(1))
-        if amt > 0:
-            await send_fee_result(u, amt)
-            return
+        if amt > 0: await send_fee_result(u, amt); return
 
     if u.effective_chat.type in ["group", "supergroup"]:
         if not await is_admin(u, c):
             fn = ((u.effective_user.first_name or "") + " " + (u.effective_user.last_name or "")).lower()
             un = (u.effective_user.username or "").lower()
             if any(k in fn or k in un for k in ["chikunxt", "harshal", "chiku escrow"]):
-                await u.message.reply_text(
-                    f"🚨 <b>FAKE ADMIN ALERT!</b>\n"
-                    f"⚠️ {u.effective_user.mention_html()} real admin nahi hai!\n"
-                    f"👉 Real Admin: @CHIKUNXT (<code>{OWNER_ID}</code>)", 
-                    parse_mode="HTML"
-                )
+                await u.message.reply_text(f"🚨 <b>FAKE ADMIN ALERT!</b>\n⚠️ {u.effective_user.mention_html()} real admin nahi hai!\n👉 Real: @CHIKUNXT (<code>{OWNER_ID}</code>)", parse_mode="HTML")
 
 if __name__ == '__main__':
     threading.Thread(target=run_web, daemon=True).start()
@@ -409,5 +386,5 @@ if __name__ == '__main__':
     
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_txt))
     
-    app.run_polling()
+    app.run_polling(drop_pending_updates=True)
         
