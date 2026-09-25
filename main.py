@@ -5,10 +5,8 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, fil
 
 web_app = Flask(__name__)
 @web_app.route('/')
-def home(): return "Chiku Escrow Running 24/7"
-
-def run_web():
-    web_app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
+def home(): return "Chiku Escrow 24/7"
+def run_web(): web_app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
 
 BOT_TOKEN = "8938665546:AAFz121wlq59_UvVIAWlapHfh58q_Uq7b1E"
 OWNER_ID = 7364435907
@@ -32,11 +30,10 @@ def norm_txt(t):
 
 def get_fee(amt):
     if amt <= 0: return 0.0, "0%", "0₹", 0.0
-    if amt <= 190: f, r, d = 10.0, "Flat ₹10", "Rs 10"
-    elif amt <= 599: f, r, d = 20.0, "Flat ₹20", "Rs 20"
-    elif amt <= 2000: f, r, d = round(amt*0.035, 2), "3.5%", f"3.5% - {round(amt*0.035):,.0f}₹"
-    else: f, r, d = round(amt*0.03, 2), "3%", f"3% - {round(amt*0.03):,.0f}₹"
-    return f, r, d, amt - f
+    if amt <= 190: return 10.0, "Flat ₹10", "Rs 10", amt - 10.0
+    if amt <= 599: return 20.0, "Flat ₹20", "Rs 20", amt - 20.0
+    if amt <= 2000: return round(amt*0.035, 2), "3.5%", f"3.5% - {round(amt*0.035):,.0f}₹", amt - round(amt*0.035, 2)
+    return round(amt*0.03, 2), "3%", f"3% - {round(amt*0.03):,.0f}₹", amt - round(amt*0.03, 2)
 
 def parse_amt(val):
     if not val: return 0.0
@@ -49,16 +46,9 @@ def extract_f(raw):
     f = {"seller": "", "buyer": "", "details": "", "amount": "", "till": "SECURE", "deal_id": ""}
     dm = re.search(r"DL[-_ ]*CHIKU[-_ ]*\d+", n, re.I)
     if dm: f["deal_id"] = re.sub(r"\s+", "", dm.group(0).upper().replace("_", "-"))
-    sm = re.search(r"seller\s*[:\-]\s*([^\n\r]+)", n, re.I)
-    if sm: f["seller"] = sm.group(1).strip()
-    bm = re.search(r"buyer\s*[:\-]\s*([^\n\r]+)", n, re.I)
-    if bm: f["buyer"] = bm.group(1).strip()
-    am = re.search(r"(?:deal\s*amount|amount|released)\s*[:\-]\s*([^\n\r]+)", n, re.I)
-    if am: f["amount"] = am.group(1).strip()
-    dtm = re.search(r"(?:deal\s*details|deal\s*deatails|details)\s*[:\-]\s*([^\n\r]+)", n, re.I)
-    if dtm: f["details"] = dtm.group(1).strip()
-    tm = re.search(r"(?:escrow\s*till|till)\s*[:\-]\s*([^\n\r]+)", n, re.I)
-    if tm: f["till"] = tm.group(1).strip()
+    for k, p in [("seller", r"seller\s*[:\-]\s*([^\n\r]+)"), ("buyer", r"buyer\s*[:\-]\s*([^\n\r]+)"), ("amount", r"(?:deal\s*amount|amount|released)\s*[:\-]\s*([^\n\r]+)"), ("details", r"(?:deal\s*details|deal\s*deatails|details)\s*[:\-]\s*([^\n\r]+)"), ("till", r"(?:escrow\s*till|till)\s*[:\-]\s*([^\n\r]+)")]:
+        m = re.search(p, n, re.I)
+        if m: f[k] = m.group(1).strip()
     return f
 
 async def res_uid(u, rep, ctx, cid):
@@ -218,8 +208,7 @@ async def cancel_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
         DEALS_DB[did]["status"] = "CANCELLED"
         seller, buyer, amt_str, rep_mid = DEALS_DB[did]["seller"], DEALS_DB[did]["buyer"], str(DEALS_DB[did]["amount"]), DEALS_DB[did].get("msg_id", rep_mid)
     await unpin_old(c, cid, rep_mid)
-    s_tag = seller.split()[0] if seller else "@Seller"
-    b_tag = buyer.split()[0] if buyer else "@Buyer"
+    s_tag, b_tag = (seller.split()[0] if seller else "@Seller"), (buyer.split()[0] if buyer else "@Buyer")
     amt_num = parse_amt(amt_str)
     amt_display = f"₹{amt_num:,.0f}" if amt_num > 0 else "N/A"
     txt = f"❌ <b>DEAL CANCELLED</b>\n━━━━━━━━━━━━━━━━━━━\n🪪 <b>Deal ID:</b> {did}\n💰 <b>Amount:</b> {amt_display}\n👤 <b>Seller:</b> {s_tag}\n👤 <b>Buyer:</b> {b_tag}\n⚠️ <b>Reason:</b> {rsn}\n👤 <b>Action By:</b> {u.effective_user.mention_html()}"
@@ -345,9 +334,10 @@ async def handle_txt(u: Update, c: ContextTypes.DEFAULT_TYPE):
 if __name__ == '__main__':
     threading.Thread(target=run_web, daemon=True).start()
     app = ApplicationBuilder().token(BOT_TOKEN).build()
-    for cmd, fn in [("form", form), ("fee", fee_command), ("fees", fee_command), ("deal", start_deal), ("close", close_deal), ("hold", hold_deal), ("cancel", cancel_deal), ("refund", refund_deal), ("status", status_deal), ("stats", stats_cmd), ("adminhold", admin_hold_cmd)]:
-        app.add_handler(CommandHandler(cmd, fn))
+    cmds = [("form", form), ("fee", fee_command), ("fees", fee_command), ("deal", start_deal), ("close", close_deal), ("hold", hold_deal), ("cancel", cancel_deal), ("refund", refund_deal), ("status", status_deal), ("stats", stats_cmd), ("adminhold", admin_hold_cmd)]
+    for cmd, fn in cmds: app.add_handler(CommandHandler(cmd, fn))
     app.add_handler(MessageHandler(filters.StatusUpdate.PINNED_MESSAGE, purge_pinned_service_msg))
     app.add_handler(MessageHandler(filters.UpdateType.EDITED_MESSAGE, handle_edited_msg))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_txt))
-    app.run_polling(d
+    app.run_polling(drop_pending_updates=True)
+    
