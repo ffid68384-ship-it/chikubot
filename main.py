@@ -34,7 +34,7 @@ def clean_txt(t):
         'ᴀ':'a','a':'a','ᴛ':'t','t':'t','ɪ':'i','i':'i','ᴏ':'o','o':'o',
         'ᴡ':'w','w':'w','м':'m','m':'m','ɴ':'n','n':'n','ᴄ':'c','c':'c',
         'ʜ':'h','h':'h','ᴋ':'k','k':'k','ᴘ':'p','p':'p','ғ':'f','f':'f',
-        '𝖴':'u','U':'u','O':'o','О':'o'
+        '𝖴':'u','U':'u','O':'o','О':'o','а':'a','е':'e','о':'o','р':'p','с':'c'
     }
     t_norm = unicodedata.normalize('NFKD', str(t))
     res = "".join(mapping.get(ch, ch) for ch in t_norm)
@@ -65,41 +65,39 @@ def get_amt(val):
 
 def parse_form(raw):
     data = {"seller": "", "buyer": "", "details": "", "amount": "", "till": "", "id": ""}
-    norm_full = clean_txt(raw)
+    norm = clean_txt(raw)
 
-    dm = re.search(r"dl[-_ ]*chiku[-_ ]*\d+", norm_full)
+    dm = re.search(r"dl[-_ ]*chiku[-_ ]*\d+", norm)
     if dm:
         data["id"] = re.sub(r"\s+", "", dm.group(0).upper().replace("_", "-"))
 
+    # Extract Blocks with regex on normalized string
+    m_s = re.search(r"seller\s*[:\-]\s*([^\n\r•]+)", norm)
+    if m_s: data["seller"] = m_s.group(1).strip()
+
+    m_b = re.search(r"buyer\s*[:\-]\s*([^\n\r•]+)", norm)
+    if m_b: data["buyer"] = m_b.group(1).strip()
+
+    m_d = re.search(r"(?:deal\s*)?(?:details|deatails|detail)\s*[:\-]\s*(.*?)(?=\s*[•\*\-]?\s*(?:deal\s*)?(?:amount|amt|price|till)|\Z)", norm, re.S)
+    if m_d: data["details"] = " ".join(m_d.group(1).split()).strip()
+
+    # Amount block - chahe newline ho ya direct number
+    m_a = re.search(r"(?:deal\s*)?(?:amount|amt|price|amunt|amont)\s*[:\-]\s*([^\n\r•]+)", norm)
+    if m_a:
+        num = re.search(r"(\d+(?:\.\d+)?)", m_a.group(1))
+        data["amount"] = num.group(1) if num else m_a.group(1).strip()
+
+    m_t = re.search(r"(?:escrow\s*)?till\s*[:\-]\s*([^\n\r•]+)", norm)
+    if m_t: data["till"] = m_t.group(1).strip()
+
+    # Original text preserve for usernames / cases
     lines = raw.split("\n")
     for line in lines:
-        c_line = clean_txt(line).strip()
-        if not c_line:
-            continue
-
-        parts = re.split(r"[:\-]", line, 1)
-        val = parts[1].strip() if len(parts) > 1 else ""
-
-        if "seller" in c_line and not data["seller"]:
-            data["seller"] = val
-        elif "buyer" in c_line and not data["buyer"]:
-            data["buyer"] = val
-        elif any(k in c_line for k in ["details", "deatails", "detail"]) and not data["details"]:
-            data["details"] = val
-        elif any(k in c_line for k in ["amount", "amt", "price", "amunt", "amont", "cost"]):
-            m_num = re.search(r"[₹rs\s]*(\d+(?:\.\d+)?)", val or line, re.I)
-            if m_num:
-                data["amount"] = m_num.group(1)
-            else:
-                data["amount"] = val
-        elif "till" in c_line and not data["till"]:
-            data["till"] = val
-
-    if not data["amount"] or data["amount"].upper() == "N/A":
-        pure_no_handles = re.sub(r"@\w+", "", raw)
-        m_curr = re.search(r"[₹rs]\s*(\d+(?:\.\d+)?)", pure_no_handles, re.I)
-        if m_curr:
-            data["amount"] = m_curr.group(1)
+        c = clean_txt(line)
+        if "seller" in c and ":" in line and not data["seller"]:
+            data["seller"] = line.split(":", 1)[1].strip()
+        elif "buyer" in c and ":" in line and not data["buyer"]:
+            data["buyer"] = line.split(":", 1)[1].strip()
 
     return data
 
