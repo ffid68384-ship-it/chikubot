@@ -998,6 +998,3 @@ async def cmd_close(
             r"[^\d.]",
             "",
             context.args[0],
-        )
-
-        t
