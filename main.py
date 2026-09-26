@@ -114,12 +114,6 @@ async def send_c(u: Update, amt: float):
     fee, rate, _, rcv = calc_fee(amt)
     await u.message.reply_text(f"📊 <b>@CHIKUESCROWSERVICE FEE CALCULATOR</b>\n━━━━━━━━━━━━━━━━━━━\n💰 <b>Deal Amount:</b> ₹{amt:,.0f}\n⚡ <b>Fee Rate:</b> {rate}\n💵 <b>Escrow Fee:</b> ₹{fee:,.0f}\n━━━━━━━━━━━━━━━━━━━\n✅ <b>Seller Receives:</b> ₹{rcv:,.0f}\n\n📱 <b>RG :</b> @CHIKUNXT", parse_mode="HTML")
 
-async def safe_pin(c, cid, mid):
-    try:
-        await c.bot.pin_chat_message(chat_id=cid, message_id=mid, disable_notification=True)
-    except:
-        pass
-
 async def cmd_form(u: Update, c: ContextTypes.DEFAULT_TYPE):
     msg = ("<b>ᴇꜱᴄʀᴏᴡ ᴅᴇᴀʟ ғᴏʀᴍ</b>\n\n• <b>ꜱᴇʟʟᴇʀ :</b> \n\n• <b>ʙᴜʏᴇʀ :</b> \n\n• <b>ᴅᴇᴀʟ ᴅᴇᴀᴛᴀɪʟꜱ :</b> \n\n• <b>ᴅᴇᴀʟ ᴀᴍᴏᴜɴᴛ :</b> \n\n• <b>ᴇꜱᴄʀᴏᴡ ᴛɪʟʟ :</b> \n\n• <b>ғᴏʀ ʀᴇʟᴇᴀsᴇ sᴇʟʟᴇʀ ᴜᴘɪ :</b> \n\n<i>ғᴏʀ ᴍᴏʀᴇ ᴘʀᴏᴏғs ᴄʜᴇᴄᴋ ɢʀᴏᴜᴘ ᴘɪɴ ᴍᴇssᴀɢᴇs..</i>\n\n⚠️ <b>ESCROW FEES IS NON - REFUNDABLE NO MATTER IF THE DEAL GETS CANCELLED</b> ⚠️")
     await u.message.reply_text(msg, parse_mode="HTML")
@@ -159,8 +153,10 @@ async def cmd_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     till = f['till'] if f['till'] else 'SECURE'
     msg = f"<b>ESCROW DEAL</b>\n🪪 <b>DEAL ID:</b> {did}\n\n• <b>ꜱᴇʟʟᴇʀ :</b> {seller}\n• <b>ʙᴜʏᴇʀ  :</b> {buyer}\n\n• <b>ᴅᴇᴀʟ ᴅᴇᴀᴛᴀɪʟꜱ :</b> {dtl}\n• <b>ᴅᴇᴀʟ ᴀᴍᴏᴜɴᴛ :</b> {amt_lbl}\n• <b>ᴇꜱᴄʀᴏᴡ ᴛɪʟʟ :</b> {till}\n\n<b>Escrower :</b> {eu.mention_html()} ({eu.id}){fee_line}"
     sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=msg, parse_mode="HTML")
-    await safe_pin(c, u.effective_chat.id, sm.message_id)
-    LAST_PIN = sm.message_id
+    try:
+        await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
+        LAST_PIN = sm.message_id
+    except: pass
     DEALS_DB[did] = {"status": "ACTIVE", "seller": seller, "buyer": buyer, "amount": amt, "escrower": (f"@{eu.username}" if eu.username else eu.first_name), "details": dtl, "msg_id": sm.message_id}
 
 async def cmd_received(u: Update, c: ContextTypes.DEFAULT_TYPE):
@@ -225,8 +221,10 @@ async def cmd_close(u: Update, c: ContextTypes.DEFAULT_TYPE):
     esc_by = f"@{eu.username}" if eu.username else eu.mention_html()
     txt = f"✅ <b>Deal Completed</b>\n🪪 <b>Trade ID:</b>\n{did}\n📤 <b>Released:</b> {amt_lbl}\n👤 <b>Escrowed By:</b>\n{esc_by}\n\n~ {b_tag} and {s_tag}\nare requested to drop the\nvouch before leaving 👇🏻\n\n<code>Vouch @chikuescrowservice for {amt_lbl} smooth escrow deal</code>"
     sm = await c.bot.send_message(chat_id=cid, text=txt, parse_mode="HTML")
-    await safe_pin(c, cid, sm.message_id)
-    LAST_PIN = sm.message_id
+    try:
+        await c.bot.pin_chat_message(chat_id=cid, message_id=sm.message_id, disable_notification=True)
+        LAST_PIN = sm.message_id
+    except: pass
 
 async def cmd_cancel(u: Update, c: ContextTypes.DEFAULT_TYPE):
     global LAST_PIN
@@ -238,8 +236,10 @@ async def cmd_cancel(u: Update, c: ContextTypes.DEFAULT_TYPE):
         try: await c.bot.unpin_chat_message(chat_id=u.effective_chat.id, message_id=LAST_PIN)
         except: pass
     sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=f"❌ <b>DEAL CANCELLED</b>\n🪪 <b>ID:</b> {did}\n👤 <b>By:</b> {u.effective_user.mention_html()}", parse_mode="HTML")
-    await safe_pin(c, u.effective_chat.id, sm.message_id)
-    LAST_PIN = sm.message_id
+    try:
+        await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
+        LAST_PIN = sm.message_id
+    except: pass
 
 async def cmd_refund(u: Update, c: ContextTypes.DEFAULT_TYPE):
     global LAST_PIN
@@ -269,8 +269,10 @@ async def cmd_refund(u: Update, c: ContextTypes.DEFAULT_TYPE):
     amt_lbl = f"₹{amt:,.2f}" if amt > 0 else "Deal Amount"
     txt = f"🔄 <b>DEAL REFUNDED</b>\n━━━━━━━━━━━━━━━━━━━\n🪪 <b>Trade ID:</b> {did}\n💵 <b>Refunded Amount:</b> {amt_lbl}\n👤 <b>Refunded To:</b> {b_tag}\n👤 <b>Admin:</b> {u.effective_user.mention_html()}\n\n🔒 <i>Deal amount has been safely refunded back to buyer.</i>"
     sm = await c.bot.send_message(chat_id=cid, text=txt, parse_mode="HTML")
-    await safe_pin(c, cid, sm.message_id)
-    LAST_PIN = sm.message_id
+    try:
+        await c.bot.pin_chat_message(chat_id=cid, message_id=sm.message_id, disable_notification=True)
+        LAST_PIN = sm.message_id
+    except: pass
 
 async def cmd_hold(u: Update, c: ContextTypes.DEFAULT_TYPE):
     global LAST_PIN
@@ -283,8 +285,10 @@ async def cmd_hold(u: Update, c: ContextTypes.DEFAULT_TYPE):
         try: await c.bot.unpin_chat_message(chat_id=u.effective_chat.id, message_id=LAST_PIN)
         except: pass
     sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=f"⏳ <b>DEAL ON HOLD</b>\n━━━━━━━━━━━━━━━━━━━\n🪪 <b>Deal ID:</b> {did}\n⚠️ <b>Reason:</b> {rsn}\n👤 <b>Action By:</b> {u.effective_user.mention_html()}\n\n🔒 <i>Release is paused.</i>", parse_mode="HTML")
-    await safe_pin(c, u.effective_chat.id, sm.message_id)
-    LAST_PIN = sm.message_id
+    try:
+        await c.bot.pin_chat_message(chat_id=u.effective_chat.id, message_id=sm.message_id, disable_notification=True)
+        LAST_PIN = sm.message_id
+    except: pass
 
 async def cmd_adminhold(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(u, c): return
@@ -325,13 +329,6 @@ async def check_edit(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await c.bot.send_message(chat_id=em.chat_id, text=f"⚠️ {em.from_user.mention_html()} <b>EDITED FORM/MESSAGE NOT ALLOWED ⚠️</b>", parse_mode="HTML")
     except: pass
 
-async def delete_system_pin(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    # This specifically catches and deletes the "pinned a message" system messages.
-    try:
-        if u.message and u.message.pinned_message:
-            await u.message.delete()
-    except: pass
-
 async def text_router(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not u.message or not u.message.text: return
     t = u.message.text.strip().lower()
@@ -350,31 +347,19 @@ async def text_router(u: Update, c: ContextTypes.DEFAULT_TYPE):
 def main():
     threading.Thread(target=run_web, daemon=True).start()
     app = ApplicationBuilder().token(BOT_TOKEN).build()
-    
     app.add_handler(CommandHandler("form", cmd_form))
     app.add_handler(CommandHandler("fee", cmd_fee))
     app.add_handler(CommandHandler("fees", cmd_fee))
     app.add_handler(CommandHandler("deal", cmd_deal))
-    app.add_handler(CommandHandler("received", cmd_received))
-    app.add_handler(CommandHandler("recieved", cmd_received))
-    app.add_handler(CommandHandler("receive", cmd_received))
-    app.add_handler(CommandHandler("recive", cmd_received))
+    for cmd in ["received", "recieved", "receive", "recive"]: app.add_handler(CommandHandler(cmd, cmd_received))
     app.add_handler(CommandHandler("close", cmd_close))
     app.add_handler(CommandHandler("cancel", cmd_cancel))
     app.add_handler(CommandHandler("refund", cmd_refund))
     app.add_handler(CommandHandler("hold", cmd_hold))
     app.add_handler(CommandHandler("adminhold", cmd_adminhold))
     app.add_handler(CommandHandler("stats", cmd_stats))
-    
-    # Catching edits
     app.add_handler(MessageHandler(filters.UpdateType.EDITED_MESSAGE, check_edit))
-    
-    # Catching the system message created when a message is pinned
-    app.add_handler(MessageHandler(filters.StatusUpdate.PINNED_MESSAGE, delete_system_pin))
-    
-    # Normal text handler
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_router))
-    
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
