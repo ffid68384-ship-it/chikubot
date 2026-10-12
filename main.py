@@ -264,7 +264,7 @@ async def cmd_fee(u: Update, c: ContextTypes.DEFAULT_TYPE):
         "• <b>Upper Than ₹3000 - 3%</b>\n\n"
         "📱 <b>RG : @CHIKUNXT</b>\n"
         "━━━━━━━━━━━━━━━━━━━\n"
-        "💡 <b>Check: fees 2000</b>"
+        "💡 <b>Check:</b> <code>fees 2000</code>"
     )
     await u.message.reply_text(fee_text, parse_mode="HTML")
 
@@ -408,18 +408,25 @@ async def text_router(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not u.message or not u.message.text:
         return
     t = u.message.text.strip().lower()
-    if t in ["form", ".form"]:
-        await cmd_form(u, c)
-    elif t in ["fee", "fees", ".fee", ".fees"]:
+    
+    # Exact check for fee/fees without amount
+    if t in ["fee", "fees", ".fee", ".fees", "/fee", "/fees"]:
         await cmd_fee(u, c)
-    elif t in ["stats", ".stats"]:
+        return
+    elif t in ["form", ".form", "/form"]:
+        await cmd_form(u, c)
+        return
+    elif t in ["stats", ".stats", "/stats"]:
         await cmd_stats(u, c)
+        return
     elif t in ["refund", ".refund"]:
         await cmd_refund(u, c)
-    
-    m = re.match(r"^(?:fee|fees|\.fee|\.fees)\s+([^\s]+)", t)
+        return
+
+    # Check for fee calculation with amount (e.g. fees 2000, /fees 2000)
+    m = re.match(r"^(?:\/)?(?:fee|fees|\.fee|\.fees)\s+(\d+(?:\.\d+)?)", t)
     if m:
-        num_str = re.sub(r'[^\d\.]', '', m.group(1))
+        num_str = m.group(1)
         if num_str:
             amt = float(num_str)
             fee, rate, _, rcv = calc_fee(amt)
@@ -465,4 +472,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-        
