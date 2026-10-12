@@ -100,6 +100,8 @@ async def resolve_u(u, rep, ctx, cid):
     if clean.lower() in ["me", "i", "myself", "mai"] and rep and rep.from_user:
         fu = rep.from_user
         return f"@{fu.username} ({fu.id})" if fu.username else f"{fu.first_name} ({fu.id})"
+    if clean.startswith("@"):
+        return clean
     return clean
 
 async def del_m(u: Update):
@@ -328,25 +330,43 @@ async def cmd_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=msg, parse_mode="HTML")
     await safe_pin(c, u.effective_chat.id, sm.message_id)
     LAST_PIN = sm.message_id
-    DEALS_DB[did] = {"status": "ACTIVE", "amount": amt, "msg_id": sm.message_id}
+    DEALS_DB[did] = {"status": "ACTIVE", "amount": amt, "seller": f['seller'], "buyer": f['buyer'], "msg_id": sm.message_id}
 
 async def cmd_close(u: Update, c: ContextTypes.DEFAULT_TYPE):
     global CURR_DEAL, LAST_PIN
     await del_m(u)
     if not await is_admin(u, c):
         return
-    did = CURR_DEAL or "DL-CHIKU-11254"
+    cid = u.effective_chat.id
+    rep = u.message.reply_to_message
+    did, amt, seller, buyer, r_mid = CURR_DEAL or "DL-CHIKU-11254", 0.0, "@Seller", "@Buyer", LAST_PIN
+    if rep and (rep.text or rep.caption):
+        r_mid = rep.message_id
+        f = parse_form(rep.text or rep.caption)
+        if f["id"]: did = f["id"]
+        if f["amount"] > 0: amt = f["amount"]
+        if f["seller"]: seller = f["seller"]
+        if f["buyer"]: buyer = f["buyer"]
     if did in DEALS_DB:
+        amt = amt if amt > 0 else DEALS_DB[did].get("amount", 0.0)
+        seller = DEALS_DB[did].get("seller", seller)
+        buyer = DEALS_DB[did].get("buyer", buyer)
+        r_mid = DEALS_DB[did].get("msg_id", r_mid)
         DEALS_DB[did]["status"] = "COMPLETED"
     STATS["deals"] += 1
-    if LAST_PIN:
-        try:
-            await c.bot.unpin_chat_message(chat_id=u.effective_chat.id, message_id=LAST_PIN)
-        except:
-            pass
-    text = "✅ DEAL COMPLETED\nID: " + did + "\nSuccessfully closed by " + (u.effective_user.first_name if u.effective_user else "Admin")
-    sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=text)
-    await safe_pin(c, u.effective_chat.id, sm.message_id)
+    STATS["vol"] += amt
+    STATS["fees"] += calc_fee(amt)[0]
+    if r_mid:
+        try: await c.bot.unpin_chat_message(chat_id=cid, message_id=r_mid)
+        except: pass
+    amt_lbl = f"₹{amt:,.2f}" if amt > 0 else "Deal Amount"
+    s_tag = seller.split()[0] if seller else "@Seller"
+    b_tag = buyer.split()[0] if buyer else "@Buyer"
+    esc_by = f"@{u.effective_user.username}" if u.effective_user and u.effective_user.username else u.effective_user.mention_html()
+    
+    txt = f"✅ <b>Deal Completed</b>\n🪪 <b>Trade ID:</b>\n{did}\n📤 <b>Released:</b> {amt_lbl}\n👤 <b>Escrowed By:</b>\n{esc_by}\n\n~ {b_tag} and {s_tag}\nare requested to drop the\nvouch before leaving 👇🏻\n\n<code>Vouch @chikuescrowservice for {amt_lbl} smooth escrow deal</code>"
+    sm = await c.bot.send_message(chat_id=cid, text=txt, parse_mode="HTML")
+    await safe_pin(c, cid, sm.message_id)
     LAST_PIN = sm.message_id
 
 async def cmd_hold(u: Update, c: ContextTypes.DEFAULT_TYPE):
@@ -358,8 +378,8 @@ async def cmd_hold(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if did in DEALS_DB:
         DEALS_DB[did]["status"] = "ON HOLD"
     rsn = " ".join(c.args) if c.args else "Verification / Dispute Under Review"
-    text = "⏳ DEAL ON HOLD\nID: " + did + "\nReason: " + rsn
-    sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=text)
+    text = f"⏳ <b>DEAL ON HOLD</b>\n━━━━━━━━━━━━━━━━━━━\n🪪 <b>Deal ID:</b> {did}\n⚠️ <b>Reason:</b> {rsn}\n👤 <b>Action By:</b> {u.effective_user.mention_html()}"
+    sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=text, parse_mode="HTML")
     await safe_pin(c, u.effective_chat.id, sm.message_id)
     LAST_PIN = sm.message_id
 
@@ -371,8 +391,8 @@ async def cmd_refund(u: Update, c: ContextTypes.DEFAULT_TYPE):
     did = CURR_DEAL or "DL-CHIKU-11254"
     if did in DEALS_DB:
         DEALS_DB[did]["status"] = "REFUNDED"
-    text = "🔄 DEAL REFUNDED\nID: " + did + "\nAmount refunded safely to buyer."
-    sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=text)
+    text = f"🔄 <b>DEAL REFUNDED</b>\n━━━━━━━━━━━━━━━━━━━\n🪪 <b>Trade ID:</b> {did}\n👤 <b>Admin:</b> {u.effective_user.mention_html()}\n\n🔒 <i>Amount refunded safely to buyer.</i>"
+    sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=text, parse_mode="HTML")
     await safe_pin(c, u.effective_chat.id, sm.message_id)
     LAST_PIN = sm.message_id
 
@@ -384,9 +404,9 @@ async def cmd_cancel(u: Update, c: ContextTypes.DEFAULT_TYPE):
     did = CURR_DEAL or "DL-CHIKU-11254"
     if did in DEALS_DB:
         DEALS_DB[did]["status"] = "CANCELLED"
-    user_name = u.effective_user.first_name if u.effective_user else "Admin"
-    text = "❌ DEAL CANCELLED\nID: " + did + "\nBy: " + user_name
-    sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=text)
+    user_mention = u.effective_user.mention_html() if u.effective_user else "Admin"
+    text = f"❌ <b>DEAL CANCELLED</b>\n━━━━━━━━━━━━━━━━━━━\n🪪 <b>ID:</b> {did}\n👤 <b>By:</b> {user_mention}"
+    sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=text, parse_mode="HTML")
     await safe_pin(c, u.effective_chat.id, sm.message_id)
     LAST_PIN = sm.message_id
 
@@ -408,22 +428,15 @@ async def text_router(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not u.message or not u.message.text:
         return
     t = u.message.text.strip().lower()
-    
-    # Exact check for fee/fees without amount
-    if t in ["fee", "fees", ".fee", ".fees", "/fee", "/fees"]:
-        await cmd_fee(u, c)
-        return
-    elif t in ["form", ".form", "/form"]:
+    if t in ["form", ".form"]:
         await cmd_form(u, c)
-        return
-    elif t in ["stats", ".stats", "/stats"]:
+    elif t in ["fee", "fees", ".fee", ".fees"]:
+        await cmd_fee(u, c)
+    elif t in ["stats", ".stats"]:
         await cmd_stats(u, c)
-        return
     elif t in ["refund", ".refund"]:
         await cmd_refund(u, c)
-        return
-
-    # Check for fee calculation with amount (e.g. fees 2000, /fees 2000)
+    
     m = re.match(r"^(?:\/)?(?:fee|fees|\.fee|\.fees)\s+(\d+(?:\.\d+)?)", t)
     if m:
         num_str = m.group(1)
@@ -449,26 +462,4 @@ def main():
     app.add_handler(CommandHandler("settings", cmd_settings))
     app.add_handler(CommandHandler("fee", cmd_fee))
     app.add_handler(CommandHandler("fees", cmd_fee))
-    app.add_handler(CommandHandler("addadmin", cmd_addadmin))
-    app.add_handler(CommandHandler("removeadmin", cmd_removeadmin))
-    app.add_handler(CommandHandler("admins", cmd_admins))
-    app.add_handler(CommandHandler("chatid", cmd_chatid))
-    
-    app.add_handler(CommandHandler("form", cmd_form))
-    app.add_handler(CommandHandler("deal", cmd_deal))
-    app.add_handler(CommandHandler("close", cmd_close))
-    app.add_handler(CommandHandler("hold", cmd_hold))
-    app.add_handler(CommandHandler("cancel", cmd_cancel))
-    app.add_handler(CommandHandler("refund", cmd_refund))
-    app.add_handler(CommandHandler("stats", cmd_stats))
-    
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_router))
-    
-    port = int(os.environ.get("PORT", 10000))
-    import threading
-    threading.Thread(target=lambda: web_app.run(host='0.0.0.0', port=port), daemon=True).start()
-    
-    app.run_polling(drop_pending_updates=True)
-
-if __name__ == '__main__':
-    main()
+    app.add_handler(CommandHandler("addadmin", cm
