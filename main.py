@@ -134,13 +134,27 @@ async def cmd_start(u: Update, c: ContextTypes.DEFAULT_TYPE):
 async def cmd_help(u: Update, c: ContextTypes.DEFAULT_TYPE):
     msg = (
         "🛡️ <b>CHIKU ESCROW — ADMIN COMMANDS</b>\n\n"
-        "/deal [amount] — Add escrow deal\n"
+        "/deal 500 — Add escrow deal\n"
         "/close — Close your own deal\n"
-        "/hold [Reason] — Hold your own deal\n"
+        "/hold Reason — Hold your own deal\n"
         "/unhold — Remove hold\n"
         "/cancel — Cancel your own deal\n"
         "/refund — Refund your own deal\n"
-        "/c [amount] — 💎 Public Fee Calculator"
+        "/c 500 — 💎 Public Fee Calculator\n\n"
+        "/settradeid 198 — Owner / Co-Owner only\n"
+        "/minus — Remove latest deal\n"
+        "/stats — GC deal statistics\n"
+        "/earnings — Earnings\n"
+        "/report — Deal report\n\n"
+        "/admins — Access list\n"
+        "/addadmin ID — Add one admin\n"
+        "/removeadmin ID — Remove admin\n\n"
+        "/coowneradd ID — Owner only\n"
+        "/coownerremove ID — Owner only\n"
+        "/coowners — Co-owner list\n\n"
+        "/settings — Bot settings\n"
+        "/fee — Universal fee settings\n"
+        "/chatid — Chat ID"
     )
     await u.message.reply_text(msg, parse_mode="HTML")
 
@@ -154,6 +168,122 @@ async def cmd_c(u: Update, c: ContextTypes.DEFAULT_TYPE):
         fee, rate, _, rcv = calc_fee(amt)
         await u.message.reply_text(f"💎 <b>Public Fee Calculator</b>\nAmount: ₹{amt:,.0f}\nFee: ₹{fee:,.0f} ({rate})\nTotal / Net: ₹{rcv:,.0f}", parse_mode="HTML")
 
+async def cmd_settradeid(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    global DEAL_CTR
+    uid = u.effective_user.id if u.effective_user else 0
+    if uid != OWNER_ID and uid not in CO_OWNERS:
+        await u.message.reply_text("⚠️ Owner / Co-Owner only command!")
+        return
+    if c.args and c.args[0].isdigit():
+        DEAL_CTR = int(c.args[0])
+        await u.message.reply_text(f"✅ Trade ID counter set to: DL-CHIKU-{DEAL_CTR}")
+    else:
+        await u.message.reply_text("💡 Use: <code>/settradeid 198</code>", parse_mode="HTML")
+
+async def cmd_minus(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    if not await is_admin(u, c):
+        return
+    if DEALS_DB:
+        last_key = list(DEALS_DB.keys())[-1]
+        del DEALS_DB[last_key]
+        await u.message.reply_text(f"🗑️ Latest deal record ({last_key}) removed successfully.")
+    else:
+        await u.message.reply_text("⚠️ No active deals to remove.")
+
+async def cmd_unhold(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    global LAST_PIN
+    await del_m(u)
+    if not await is_admin(u, c):
+        return
+    if CURR_DEAL in DEALS_DB:
+        DEALS_DB[CURR_DEAL]["status"] = "ACTIVE"
+    if LAST_PIN:
+        try:
+            await c.bot.unpin_chat_message(chat_id=u.effective_chat.id, message_id=LAST_PIN)
+        except:
+            pass
+    sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=f"🔓 <b>DEAL UNHOLD / RESUMED</b>\n🪪 <b>ID:</b> {CURR_DEAL or 'DL-ACTIVE'}", parse_mode="HTML")
+    await safe_pin(c, u.effective_chat.id, sm.message_id)
+    LAST_PIN = sm.message_id
+
+async def cmd_earnings(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    if not await is_admin(u, c):
+        return
+    await u.message.reply_text(f"📊 <b>Total Earnings / Fees:</b> ₹{STATS['fees']:,.2f}", parse_mode="HTML")
+
+async def cmd_report(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    if not await is_admin(u, c):
+        return
+    await u.message.reply_text(f"📋 <b>Deal Report Summary:</b>\nTotal Deals: {STATS['deals']}\nVolume: ₹{STATS['vol']:,.2f}\nFees: ₹{STATS['fees']:,.2f}", parse_mode="HTML")
+
+async def cmd_coowneradd(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    if not u.effective_user or u.effective_user.id != OWNER_ID:
+        await u.message.reply_text("⚠️ Owner only command!")
+        return
+    if c.args and c.args[0].isdigit():
+        uid = int(c.args[0])
+        CO_OWNERS.add(uid)
+        await u.message.reply_text(f"✅ Co-Owner ID {uid} added.")
+    else:
+        await u.message.reply_text("💡 Use: <code>/coowneradd 123456789</code>", parse_mode="HTML")
+
+async def cmd_coownerremove(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    if not u.effective_user or u.effective_user.id != OWNER_ID:
+        await u.message.reply_text("⚠️ Owner only command!")
+        return
+    if c.args and c.args[0].isdigit():
+        uid = int(c.args[0])
+        if uid in CO_OWNERS:
+            CO_OWNERS.remove(uid)
+        await u.message.reply_text(f"✅ Co-Owner ID {uid} removed.")
+    else:
+        await u.message.reply_text("💡 Use: <code>/coownerremove 123456789</code>", parse_mode="HTML")
+
+async def cmd_coowners(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    lst = ", ".join(str(i) for i in CO_OWNERS) if CO_OWNERS else "None"
+    await u.message.reply_text(f"👑 <b>Co-Owners List:</b>\n<code>{lst}</code>", parse_mode="HTML")
+
+async def cmd_settings(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    if not await is_admin(u, c):
+        return
+    await u.message.reply_text("⚙️ <b>Bot Settings Panel:</b>\nAll systems are fully functional and secure under @HARSHALxNXT.", parse_mode="HTML")
+
+async def cmd_fee(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    await u.message.reply_text("💰 <b>Universal Fee System:</b>\n₹1–₹100 — ₹10\n₹101–₹599 — ₹20\n₹600–₹2000 — 3.5%\n₹2001+ — 3%", parse_mode="HTML")
+
+async def cmd_addadmin(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    uid = u.effective_user.id if u.effective_user else 0
+    if uid != OWNER_ID and uid not in CO_OWNERS:
+        await u.message.reply_text("⚠️ Owner / Co-Owner only command!")
+        return
+    if c.args:
+        for arg in c.args:
+            if arg.isdigit():
+                ADMINS_LIST.add(int(arg))
+        await u.message.reply_text("✅ Admin(s) added successfully.")
+    else:
+        await u.message.reply_text("💡 Use: <code>/addadmin ID1 ID2</code>", parse_mode="HTML")
+
+async def cmd_removeadmin(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    uid = u.effective_user.id if u.effective_user else 0
+    if uid != OWNER_ID and uid not in CO_OWNERS:
+        await u.message.reply_text("⚠️ Owner / Co-Owner only command!")
+        return
+    if c.args and c.args[0].isdigit():
+        uid_to_rem = int(c.args[0])
+        if uid_to_rem in ADMINS_LIST:
+            ADMINS_LIST.remove(uid_to_rem)
+        await u.message.reply_text(f"✅ Admin ID {uid_to_rem} removed.")
+    else:
+        await u.message.reply_text("💡 Use: <code>/removeadmin 123456789</code>", parse_mode="HTML")
+
+async def cmd_admins(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    lst = ", ".join(str(i) for i in ADMINS_LIST)
+    await u.message.reply_text(f"🛡️ <b>Authorized Admins ID:</b>\n<code>{lst}</code>", parse_mode="HTML")
+
+async def cmd_chatid(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    await u.message.reply_text(f"💬 <b>Chat ID:</b> <code>{u.effective_chat.id}</code>", parse_mode="HTML")
+
 async def cmd_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     global DEAL_CTR, CURR_DEAL, LAST_PIN
     if not await is_admin(u, c):
@@ -162,16 +292,72 @@ async def cmd_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not rep or not (rep.text or rep.caption):
         await u.message.reply_text("⚠️ Bhare hue <b>FORM</b> ka reply karke <code>/deal</code> bhejo!", parse_mode="HTML")
         return
+    if LAST_PIN:
+        try:
+            await c.bot.unpin_chat_message(chat_id=u.effective_chat.id, message_id=LAST_PIN)
+        except:
+            pass
     f = parse_form(rep.text or rep.caption)
+    if c.args:
+        n = re.sub(r'[^\d\.]', '', c.args[0])
+        if n:
+            f["amount"] = float(n)
     did = f"DL-CHIKU-{DEAL_CTR}"
     DEAL_CTR += 1
     CURR_DEAL = did
     eu = u.effective_user
-    msg = f"<b>ESCROW DEAL</b>\n🪪 <b>DEAL ID:</b> {did}\n\n• <b>ꜱᴇʟʟᴇʀ :</b> {f['seller'] or 'N/A'}\n• <b>ʙᴜʏᴇʀ  :</b> {f['buyer'] or 'N/A'}\n\n• <b>ᴅᴇᴀʟ ᴀᴍᴏᴜɴᴛ :</b> ₹{f['amount']:,.0f}\n\n<b>Escrower :</b> {eu.mention_html()}"
+    amt = f["amount"]
+    msg = f"<b>ESCROW DEAL</b>\n🪪 <b>DEAL ID:</b> {did}\n\n• <b>ꜱᴇʟʟᴇʀ :</b> {f['seller'] or 'N/A'}\n• <b>ʙᴜʏᴇʀ  :</b> {f['buyer'] or 'N/A'}\n\n• <b>ᴅᴇᴀʟ ᴀᴍᴏᴜɴᴛ :</b> ₹{amt:,.0f}\n\n<b>Escrower :</b> {eu.mention_html()}"
     sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=msg, parse_mode="HTML")
     await safe_pin(c, u.effective_chat.id, sm.message_id)
     LAST_PIN = sm.message_id
-    DEALS_DB[did] = {"status": "ACTIVE", "amount": f['amount'], "msg_id": sm.message_id}
+    DEALS_DB[did] = {"status": "ACTIVE", "amount": amt, "msg_id": sm.message_id}
+
+async def cmd_close(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    global CURR_DEAL, LAST_PIN
+    await del_m(u)
+    if not await is_admin(u, c):
+        return
+    did = CURR_DEAL or "DL-CHIKU-11254"
+    if did in DEALS_DB:
+        DEALS_DB[did]["status"] = "COMPLETED"
+    STATS["deals"] += 1
+    if LAST_PIN:
+        try:
+            await c.bot.unpin_chat_message(chat_id=u.effective_chat.id, message_id=LAST_PIN)
+        except:
+            pass
+    text = "✅ DEAL COMPLETED\nID: " + did + "\nSuccessfully closed by " + (u.effective_user.first_name if u.effective_user else "Admin")
+    sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=text)
+    await safe_pin(c, u.effective_chat.id, sm.message_id)
+    LAST_PIN = sm.message_id
+
+async def cmd_hold(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    global LAST_PIN
+    await del_m(u)
+    if not await is_admin(u, c):
+        return
+    did = CURR_DEAL or "DL-CHIKU-11254"
+    if did in DEALS_DB:
+        DEALS_DB[did]["status"] = "ON HOLD"
+    rsn = " ".join(c.args) if c.args else "Verification / Dispute Under Review"
+    text = "⏳ DEAL ON HOLD\nID: " + did + "\nReason: " + rsn
+    sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=text)
+    await safe_pin(c, u.effective_chat.id, sm.message_id)
+    LAST_PIN = sm.message_id
+
+async def cmd_refund(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    global LAST_PIN
+    await del_m(u)
+    if not await is_admin(u, c):
+        return
+    did = CURR_DEAL or "DL-CHIKU-11254"
+    if did in DEALS_DB:
+        DEALS_DB[did]["status"] = "REFUNDED"
+    text = "🔄 DEAL REFUNDED\nID: " + did + "\nAmount refunded safely to buyer."
+    sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=text)
+    await safe_pin(c, u.effective_chat.id, sm.message_id)
+    LAST_PIN = sm.message_id
 
 async def cmd_cancel(u: Update, c: ContextTypes.DEFAULT_TYPE):
     global LAST_PIN
@@ -179,8 +365,10 @@ async def cmd_cancel(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(u, c):
         return
     did = CURR_DEAL or "DL-CHIKU-11254"
+    if did in DEALS_DB:
+        DEALS_DB[did]["status"] = "CANCELLED"
     user_name = u.effective_user.first_name if u.effective_user else "Admin"
-    text = "DEAL CANCELLED\nID: " + did + "\nBy: " + user_name
+    text = "❌ DEAL CANCELLED\nID: " + did + "\nBy: " + user_name
     sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=text)
     await safe_pin(c, u.effective_chat.id, sm.message_id)
     LAST_PIN = sm.message_id
@@ -191,15 +379,35 @@ async def cmd_form(u: Update, c: ContextTypes.DEFAULT_TYPE):
 
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
+    
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("c", cmd_c))
-    app.add_handler(CommandHandler("deal", cmd_deal))
-    app.add_handler(CommandHandler("cancel", cmd_cancel))
+    app.add_handler(CommandHandler("settradeid", cmd_settradeid))
+    app.add_handler(CommandHandler("minus", cmd_minus))
+    app.add_handler(CommandHandler("unhold", cmd_unhold))
+    app.add_handler(CommandHandler("earnings", cmd_earnings))
+    app.add_handler(CommandHandler("report", cmd_report))
+    app.add_handler(CommandHandler("coowneradd", cmd_coowneradd))
+    app.add_handler(CommandHandler("coownerremove", cmd_coownerremove))
+    app.add_handler(CommandHandler("coowners", cmd_coowners))
+    app.add_handler(CommandHandler("settings", cmd_settings))
+    app.add_handler(CommandHandler("fee", cmd_fee))
+    app.add_handler(CommandHandler("addadmin", cmd_addadmin))
+    app.add_handler(CommandHandler("removeadmin", cmd_removeadmin))
+    app.add_handler(CommandHandler("admins", cmd_admins))
+    app.add_handler(CommandHandler("chatid", cmd_chatid))
+    
     app.add_handler(CommandHandler("form", cmd_form))
+    app.add_handler(CommandHandler("deal", cmd_deal))
+    app.add_handler(CommandHandler("close", cmd_close))
+    app.add_handler(CommandHandler("hold", cmd_hold))
+    app.add_handler(CommandHandler("unhold", cmd_unhold))
+    app.add_handler(CommandHandler("cancel", cmd_cancel))
+    app.add_handler(CommandHandler("refund", cmd_refund))
+    app.add_handler(CommandHandler("stats", cmd_stats))
     
     port = int(os.environ.get("PORT", 10000))
-    # Render ke liye webhook ya polling start karne se pehle flask run hoga
     import threading
     threading.Thread(target=lambda: web_app.run(host='0.0.0.0', port=port), daemon=True).start()
     
