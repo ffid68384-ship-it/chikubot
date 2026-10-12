@@ -377,8 +377,39 @@ async def cmd_cancel(u: Update, c: ContextTypes.DEFAULT_TYPE):
     LAST_PIN = sm.message_id
 
 async def cmd_form(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    msg = "<b>ᴇꜱᴄʀᴏᴡ ᴅᴇᴀʟ ғᴏʀᴍ</b>\n\n• <b>ꜱᴇʟʟᴇʀ :</b> \n\n• <b>ʙᴜʏᴇʀ :</b> \n\n• <b>ᴅᴇᴀʟ ᴅᴇᴀᴛᴀɪʟꜱ :</b> \n\n• <b>ᴅᴇᴀʟ ᴀᴍᴏᴜɴᴛ :</b> \n\n• <b>ᴇꜱᴄʀᴏᴡ ᴛɪʟʟ :</b>"
+    msg = (
+        "<b>ᴇꜱᴄʀᴏᴡ ᴅᴇᴀʟ ғᴏʀᴍ</b>\n\n"
+        "• <b>ꜱᴇʟʟᴇʀ :</b> \n\n"
+        "• <b>ʙᴜʏᴇʀ :</b> \n\n"
+        "• <b>ᴅᴇᴀʟ ᴅᴇᴀᴛᴀɪʟꜱ :</b> \n\n"
+        "• <b>ᴅᴇᴀʟ ᴀᴍᴏᴜɴᴛ :</b> \n\n"
+        "• <b>ᴇꜱᴄʀᴏᴡ ᴛɪʟʟ :</b> \n\n"
+        "• <b>ғᴏʀ ʀᴇʟᴇᴀsᴇ sᴇʟʟᴇʀ ᴜ𝚙ɪ :</b> \n\n"
+        "<i>ғᴏʀ ᴍᴏʀᴇ ᴘʀᴏᴏғs ᴄʜᴇᴄᴋ ɢʀᴏᴜᴘ ᴘɪɴ ᴍᴇssᴀɢᴇs..</i>\n\n"
+        "⚠️ <b>ESCROW FEES IS NON - REFUNDABLE NO MATTER IF THE DEAL GETS CANCELLED</b> ⚠️"
+    )
     await u.message.reply_text(msg, parse_mode="HTML")
+
+async def text_router(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    if not u.message or not u.message.text:
+        return
+    t = u.message.text.strip().lower()
+    if t in ["form", ".form"]:
+        await cmd_form(u, c)
+    elif t in ["fee", "fees", ".fee", ".fees"]:
+        await cmd_fee(u, c)
+    elif t in ["stats", ".stats"]:
+        await cmd_stats(u, c)
+    elif t in ["refund", ".refund"]:
+        await cmd_refund(u, c)
+    
+    m = re.match(r"^(?:fee|fees|\.fee|\.fees)\s+([^\s]+)", t)
+    if m:
+        num_str = re.sub(r'[^\d\.]', '', m.group(1))
+        if num_str:
+            amt = float(num_str)
+            fee, rate, _, rcv = calc_fee(amt)
+            await u.message.reply_text(f"📊 <b>@CHIKUESCROWSERVICE FEE CALCULATOR</b>\n━━━━━━━━━━━━━━━━━━━\n💰 <b>Deal Amount:</b> ₹{amt:,.0f}\n⚡ <b>Fee Rate:</b> {rate}\n💵 <b>Escrow Fee:</b> ₹{fee:,.0f}\n━━━━━━━━━━━━━━━━━━━\n✅ <b>Seller Receives:</b> ₹{rcv:,.0f}\n\n📱 <b>RG :</b> @HARSHALxNXT", parse_mode="HTML")
 
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
@@ -405,10 +436,11 @@ def main():
     app.add_handler(CommandHandler("deal", cmd_deal))
     app.add_handler(CommandHandler("close", cmd_close))
     app.add_handler(CommandHandler("hold", cmd_hold))
-    app.add_handler(CommandHandler("unhold", cmd_unhold))
     app.add_handler(CommandHandler("cancel", cmd_cancel))
     app.add_handler(CommandHandler("refund", cmd_refund))
     app.add_handler(CommandHandler("stats", cmd_stats))
+    
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_router))
     
     port = int(os.environ.get("PORT", 10000))
     import threading
