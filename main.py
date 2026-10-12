@@ -160,7 +160,7 @@ async def cmd_settings(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(u, c): return
     await u.message.reply_text("⚙️ <b>Settings Active</b>", parse_mode="HTML")
 
-async def cmd_fee(u: Update, c: ContextTypes.DEFAULT_TYPE):
+async def send_fee_menu(u: Update):
     fee_text = (
         "<b>@CHIKUESCROWSERVICE CHARGES -</b>\n\n"
         "• <b>Under ₹190 - ₹10</b>\n"
@@ -218,9 +218,11 @@ async def cmd_close(u: Update, c: ContextTypes.DEFAULT_TYPE):
     await del_m(u)
     if not await is_admin(u, c): return
     cid = u.effective_chat.id
-    did, amt, seller, buyer = CURR_DEAL or "DL-CHIKU-11254", 0.0, "@Seller", "@Buyer"
-    if u.message.reply_to_message and (u.message.reply_to_message.text or u.message.reply_to_message.caption):
-        f = parse_form(u.message.reply_to_message.text or u.message.reply_to_message.caption)
+    rep = u.message.reply_to_message
+    did, amt, seller, buyer, r_mid = CURR_DEAL or "DL-CHIKU-11254", 0.0, "@Seller", "@Buyer", LAST_PIN
+    if rep and (rep.text or rep.caption):
+        r_mid = rep.message_id
+        f = parse_form(rep.text or rep.caption)
         if f["id"]: did = f["id"]
         if f["amount"] > 0: amt = f["amount"]
         if f["seller"]: seller = f["seller"]
@@ -229,11 +231,20 @@ async def cmd_close(u: Update, c: ContextTypes.DEFAULT_TYPE):
         amt = amt if amt > 0 else DEALS_DB[did].get("amount", 0.0)
         seller = DEALS_DB[did].get("seller", seller)
         buyer = DEALS_DB[did].get("buyer", buyer)
+        r_mid = DEALS_DB[did].get("msg_id", r_mid)
+        DEALS_DB[did]["status"] = "COMPLETED"
     STATS["deals"] += 1
     STATS["vol"] += amt
     STATS["fees"] += calc_fee(amt)[0]
-    amt_lbl = f"₹{amt:,.2f}" if amt > 0 else "Deal Amount"
-    txt = f"✅ <b>Deal Completed</b>\n🪪 <b>Trade ID:</b>\n{did}\n📤 <b>Released:</b> {amt_lbl}\n\n<code>Vouch @chikuescrowservice for {amt_lbl} smooth escrow deal</code>"
+    if r_mid:
+        try: await c.bot.unpin_chat_message(chat_id=cid, message_id=r_mid)
+        except: pass
+    amt_lbl = f"₹{amt:,.2f}" if amt > 0 else "₹0.00"
+    s_tag = seller.strip() if seller else "@Seller"
+    b_tag = buyer.strip() if buyer else "@Buyer"
+    esc_by = f"@{u.effective_user.username}" if u.effective_user and u.effective_user.username else u.effective_user.mention_html()
+    
+    txt = f"✅ <b>Deal Completed</b>\n🪪 <b>Trade ID:</b>\n{did}\n📤 <b>Released:</b> {amt_lbl}\n👤 <b>Escrowed By:</b>\n{esc_by}\n\n~ {b_tag} and {s_tag}\nare requested to drop the\nvouch before leaving 👇🏻\n\n<code>Vouch @chikuescrowservice for {amt_lbl} smooth escrow deal</code>"
     sm = await c.bot.send_message(chat_id=cid, text=txt, parse_mode="HTML")
     await safe_pin(c, cid, sm.message_id)
     LAST_PIN = sm.message_id
@@ -289,7 +300,7 @@ async def text_router(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await cmd_form(u, c)
         return
     elif t in ["fee", "fees", ".fee", ".fees", "/fee", "/fees"]:
-        await cmd_fee(u, c)
+        await send_fee_menu(u)
         return
     elif t in ["stats", ".stats", "/stats"]:
         await cmd_stats(u, c)
@@ -302,7 +313,7 @@ async def text_router(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if m:
         amt = float(m.group(1))
         fee, rate, _, rcv = calc_fee(amt)
-        await u.message.reply_text(f"📊 <b>FEE CALCULATOR</b>\nAmount: ₹{amt:,.0f}\nFee: ₹{fee:,.0f} ({rate})\nNet: ₹{rcv:,.0f}", parse_mode="HTML")
+        await u.message.reply_text(f"📊 <b>@CHIKUESCROWSERVICE FEE CALCULATOR</b>\n━━━━━━━━━━━━━━━━━━━\n💰 <b>Deal Amount:</b> ₹{amt:,.0f}\n⚡ <b>Fee Rate:</b> {rate}\n💵 <b>Escrow Fee:</b> ₹{fee:,.0f}\n━━━━━━━━━━━━━━━━━━━\n✅ <b>Seller Receives:</b> ₹{rcv:,.0f}\n\n📱 <b>RG :</b> @CHIKUNXT", parse_mode="HTML")
 
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
@@ -319,8 +330,6 @@ def main():
     app.add_handler(CommandHandler("coownerremove", cmd_coownerremove))
     app.add_handler(CommandHandler("coowners", cmd_coowners))
     app.add_handler(CommandHandler("settings", cmd_settings))
-    app.add_handler(CommandHandler("fee", cmd_fee))
-    app.add_handler(CommandHandler("fees", cmd_fee))
     app.add_handler(CommandHandler("addadmin", cmd_addadmin))
     app.add_handler(CommandHandler("removeadmin", cmd_removeadmin))
     app.add_handler(CommandHandler("admins", cmd_admins))
@@ -343,4 +352,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-            
+        
