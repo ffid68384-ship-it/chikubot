@@ -44,6 +44,9 @@ def calc_fee(amt):
     if amt <= 2000:
         f = round(amt * 0.035, 2)
         return f, "3.5%", f"3.5% - {round(f)}₹", amt - f
+    if amt <= 3000:
+        f = round(amt * 0.03, 2)
+        return f, "3%", f"3% - {round(f)}₹", amt - f
     f = round(amt * 0.03, 2)
     return f, "3%", f"3% - {round(f)}₹", amt - f
 
@@ -97,15 +100,27 @@ async def cmd_help(u: Update, c: ContextTypes.DEFAULT_TYPE):
     msg = "🛡️ <b>CHIKU ESCROW — ADMIN COMMANDS</b>\n\n/deal 500\n/close\n/hold\n/cancel\n/refund\n/c 500"
     await u.message.reply_text(msg, parse_mode="HTML")
 
-async def cmd_c(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    if not c.args:
-        await u.message.reply_text("💡 Use: <code>/c 500</code>", parse_mode="HTML")
-        return
-    num = re.sub(r'[^\d\.]', '', c.args[0])
-    if num and float(num) > 0:
-        amt = float(num)
-        fee, rate, _, rcv = calc_fee(amt)
-        await u.message.reply_text(f"💎 <b>Fee Calculator</b>\nAmount: ₹{amt:,.0f}\nFee: ₹{fee:,.0f} ({rate})\nNet: ₹{rcv:,.0f}", parse_mode="HTML")
+async def cmd_fee(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    if c.args and c.args[0]:
+        num_str = re.sub(r'[^\d\.]', '', c.args[0])
+        if num_str:
+            amt = float(num_str)
+            fee, rate, _, rcv = calc_fee(amt)
+            await u.message.reply_text(f"📊 <b>@CHIKUESCROWSERVICE FEE CALCULATOR</b>\n━━━━━━━━━━━━━━━━━━━\n💰 <b>Deal Amount:</b> ₹{amt:,.0f}\n⚡ <b>Fee Rate:</b> {rate}\n💵 <b>Escrow Fee:</b> ₹{fee:,.0f}\n━━━━━━━━━━━━━━━━━━━\n✅ <b>Seller Receives:</b> ₹{rcv:,.0f}\n\n📱 <b>RG :</b> @CHIKUNXT", parse_mode="HTML")
+            return
+            
+    fee_text = (
+        "<b>@CHIKUESCROWSERVICE CHARGES -</b>\n\n"
+        "• <b>Under ₹190 - ₹10</b>\n"
+        "• <b>₹191 To ₹599 - ₹20</b>\n"
+        "• <b>₹600 To ₹2000 - 3.5%</b>\n"
+        "• <b>₹2001 To ₹3000 - 3%</b>\n"
+        "• <b>Upper Than ₹3000 - 3%</b>\n\n"
+        "📱 <b>RG : @CHIKUNXT</b>\n"
+        "━━━━━━━━━━━━━━━━━━━\n"
+        "💡 <b>Check:</b> <code>fees 2000</code>"
+    )
+    await u.message.reply_text(fee_text, parse_mode="HTML")
 
 async def cmd_settradeid(u: Update, c: ContextTypes.DEFAULT_TYPE):
     global DEAL_CTR
@@ -160,20 +175,6 @@ async def cmd_settings(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(u, c): return
     await u.message.reply_text("⚙️ <b>Settings Active</b>", parse_mode="HTML")
 
-async def send_fee_menu(u: Update):
-    fee_text = (
-        "<b>@CHIKUESCROWSERVICE CHARGES -</b>\n\n"
-        "• <b>Under ₹190 - ₹10</b>\n"
-        "• <b>₹191 To ₹599 - ₹20</b>\n"
-        "• <b>₹600 To ₹2000 - 3.5%</b>\n"
-        "• <b>₹2001 To ₹3000 - 3%</b>\n"
-        "• <b>Upper Than ₹3000 - 3%</b>\n\n"
-        "📱 <b>RG : @CHIKUNXT</b>\n"
-        "━━━━━━━━━━━━━━━━━━━\n"
-        "💡 <b>Check:</b> <code>fees 2000</code>"
-    )
-    await u.message.reply_text(fee_text, parse_mode="HTML")
-
 async def cmd_addadmin(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if u.effective_user.id != OWNER_ID and u.effective_user.id not in CO_OWNERS: return
     for arg in c.args:
@@ -203,12 +204,33 @@ async def cmd_deal(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if c.args:
         n = re.sub(r'[^\d\.]', '', c.args[0])
         if n: f["amount"] = float(n)
-    did = f"DL-CHIKU-{DEAL_CTR}"
+        
+    did = f"DL-CHIKU-{DEAL_CTR:02d}" if DEAL_CTR < 100 else f"DL-CHIKU-{DEAL_CTR}"
     DEAL_CTR += 1
     CURR_DEAL = did
+    eu = u.effective_user
     amt = f["amount"]
-    msg = f"<b>ESCROW DEAL</b>\n🪪 <b>ID:</b> {did}\n\n• <b>Seller:</b> {f['seller'] or 'N/A'}\n• <b>Buyer:</b> {f['buyer'] or 'N/A'}\n\n• <b>Amount:</b> ₹{amt:,.0f}"
+    
+    sv = f['seller'] if f['seller'] else ''
+    bv = f['buyer'] if f['buyer'] else ''
+    dv = f['details'] if f['details'] else ''
+    av = f"₹{amt:,.0f}" if amt > 0 else 'N/A'
+    tv = f['till'] if f['till'] else ''
+    
+    msg = (
+        f"<b>ESCROW DEAL</b>\n"
+        f"🪪 <b>DEAL ID:</b> {did}\n\n"
+        f"• <b>ꜱᴇʟʟᴇʀ :</b> {sv}\n"
+        f"• <b>ʙᴜʏᴇʀ :</b> {bv}\n\n"
+        f"• <b>ᴅᴇᴀʟ ᴅᴇᴀᴛᴀɪʟꜱ :</b> {dv}\n"
+        f"• <b>ᴅᴇᴀʟ ᴀᴍᴏᴜɴᴛ :</b> {av}\n"
+        f"• <b>ᴇꜱᴄʀᴏᴡ ᴛɪʟʟ :</b> {tv}\n\n"
+        f"<b>Escrower :</b> {eu.mention_html()} ({eu.id})"
+    )
     sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=msg, parse_mode="HTML")
+    if LAST_PIN:
+        try: await c.bot.unpin_chat_message(chat_id=u.effective_chat.id, message_id=LAST_PIN)
+        except: pass
     await safe_pin(c, u.effective_chat.id, sm.message_id)
     LAST_PIN = sm.message_id
     DEALS_DB[did] = {"status": "ACTIVE", "amount": amt, "seller": f['seller'], "buyer": f['buyer'], "msg_id": sm.message_id}
@@ -219,7 +241,7 @@ async def cmd_close(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not await is_admin(u, c): return
     cid = u.effective_chat.id
     rep = u.message.reply_to_message
-    did, amt, seller, buyer, r_mid = CURR_DEAL or "DL-CHIKU-11254", 0.0, "@Seller", "@Buyer", LAST_PIN
+    did, amt, seller, buyer, r_mid = CURR_DEAL or "DL-CHIKU-11254", 0.0, "", "", LAST_PIN
     if rep and (rep.text or rep.caption):
         r_mid = rep.message_id
         f = parse_form(rep.text or rep.caption)
@@ -229,8 +251,8 @@ async def cmd_close(u: Update, c: ContextTypes.DEFAULT_TYPE):
         if f["buyer"]: buyer = f["buyer"]
     if did in DEALS_DB:
         amt = amt if amt > 0 else DEALS_DB[did].get("amount", 0.0)
-        seller = DEALS_DB[did].get("seller", seller)
-        buyer = DEALS_DB[did].get("buyer", buyer)
+        seller = seller if seller else DEALS_DB[did].get("seller", "")
+        buyer = buyer if buyer else DEALS_DB[did].get("buyer", "")
         r_mid = DEALS_DB[did].get("msg_id", r_mid)
         DEALS_DB[did]["status"] = "COMPLETED"
     STATS["deals"] += 1
@@ -239,12 +261,22 @@ async def cmd_close(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if r_mid:
         try: await c.bot.unpin_chat_message(chat_id=cid, message_id=r_mid)
         except: pass
-    amt_lbl = f"₹{amt:,.2f}" if amt > 0 else "₹0.00"
+        
+    amt_lbl = f"₹{amt:,.2f}" if amt > 0 else "N/A"
     s_tag = seller.strip() if seller else "@Seller"
     b_tag = buyer.strip() if buyer else "@Buyer"
     esc_by = f"@{u.effective_user.username}" if u.effective_user and u.effective_user.username else u.effective_user.mention_html()
     
-    txt = f"✅ <b>Deal Completed</b>\n🪪 <b>Trade ID:</b>\n{did}\n📤 <b>Released:</b> {amt_lbl}\n👤 <b>Escrowed By:</b>\n{esc_by}\n\n~ {b_tag} and {s_tag}\nare requested to drop the\nvouch before leaving 👇🏻\n\n<code>Vouch @chikuescrowservice for {amt_lbl} smooth escrow deal</code>"
+    txt = (
+        f"✅ <b>Deal Completed</b>\n"
+        f"🪪 <b>Trade ID:</b>\n{did}\n"
+        f"📤 <b>Released:</b> {amt_lbl}\n"
+        f"👤 <b>Escrowed By:</b>\n{esc_by}\n\n"
+        f"~ {b_tag} and {s_tag}\n"
+        f"are requested to drop the\n"
+        f"vouch before leaving 👇🏻\n\n"
+        f"<code>Vouch @chikuescrowservice for {amt_lbl} smooth escrow deal</code>"
+    )
     sm = await c.bot.send_message(chat_id=cid, text=txt, parse_mode="HTML")
     await safe_pin(c, cid, sm.message_id)
     LAST_PIN = sm.message_id
@@ -254,7 +286,10 @@ async def cmd_hold(u: Update, c: ContextTypes.DEFAULT_TYPE):
     await del_m(u)
     if not await is_admin(u, c): return
     did = CURR_DEAL or "DL-CHIKU-11254"
-    text = f"⏳ <b>HOLD</b>\nID: {did}"
+    if did in DEALS_DB: DEALS_DB[did]["status"] = "ON HOLD"
+    rsn = " ".join(c.args) if c.args else ""
+    text = f"⏳ <b>DEAL ON HOLD</b>\n<b>ID:</b> {did}"
+    if rsn: text += f"\n<b>Reason:</b> {rsn}"
     sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=text, parse_mode="HTML")
     await safe_pin(c, u.effective_chat.id, sm.message_id)
     LAST_PIN = sm.message_id
@@ -264,7 +299,8 @@ async def cmd_refund(u: Update, c: ContextTypes.DEFAULT_TYPE):
     await del_m(u)
     if not await is_admin(u, c): return
     did = CURR_DEAL or "DL-CHIKU-11254"
-    text = f"🔄 <b>REFUNDED</b>\nID: {did}"
+    if did in DEALS_DB: DEALS_DB[did]["status"] = "REFUNDED"
+    text = f"🔄 <b>DEAL REFUNDED</b>\n<b>ID:</b> {did}\nAmount refunded safely to buyer."
     sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=text, parse_mode="HTML")
     await safe_pin(c, u.effective_chat.id, sm.message_id)
     LAST_PIN = sm.message_id
@@ -274,7 +310,9 @@ async def cmd_cancel(u: Update, c: ContextTypes.DEFAULT_TYPE):
     await del_m(u)
     if not await is_admin(u, c): return
     did = CURR_DEAL or "DL-CHIKU-11254"
-    text = f"❌ <b>CANCELLED</b>\nID: {did}"
+    if did in DEALS_DB: DEALS_DB[did]["status"] = "CANCELLED"
+    user_mention = u.effective_user.mention_html() if u.effective_user else "Admin"
+    text = f"❌ <b>DEAL CANCELLED</b>\n<b>ID:</b> {did}\n<b>By:</b> {user_mention}"
     sm = await c.bot.send_message(chat_id=u.effective_chat.id, text=text, parse_mode="HTML")
     await safe_pin(c, u.effective_chat.id, sm.message_id)
     LAST_PIN = sm.message_id
@@ -295,32 +333,37 @@ async def cmd_form(u: Update, c: ContextTypes.DEFAULT_TYPE):
 
 async def text_router(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not u.message or not u.message.text: return
-    t = u.message.text.strip().lower()
-    if t in ["form", ".form", "/form"]:
-        await cmd_form(u, c)
-        return
-    elif t in ["fee", "fees", ".fee", ".fees", "/fee", "/fees"]:
-        await send_fee_menu(u)
-        return
-    elif t in ["stats", ".stats", "/stats"]:
-        await cmd_stats(u, c)
-        return
-    elif t in ["refund", ".refund", "/refund"]:
-        await cmd_refund(u, c)
-        return
+    t = u.message.text.strip()
+    tl = t.lower()
     
-    m = re.match(r"^(?:\/)?(?:fee|fees|\.fee|\.fees)\s+(\d+(?:\.\d+)?)", t)
-    if m:
-        amt = float(m.group(1))
-        fee, rate, _, rcv = calc_fee(amt)
-        await u.message.reply_text(f"📊 <b>@CHIKUESCROWSERVICE FEE CALCULATOR</b>\n━━━━━━━━━━━━━━━━━━━\n💰 <b>Deal Amount:</b> ₹{amt:,.0f}\n⚡ <b>Fee Rate:</b> {rate}\n💵 <b>Escrow Fee:</b> ₹{fee:,.0f}\n━━━━━━━━━━━━━━━━━━━\n✅ <b>Seller Receives:</b> ₹{rcv:,.0f}\n\n📱 <b>RG :</b> @CHIKUNXT", parse_mode="HTML")
+    cmd_only = tl.split('@')[0]
+    
+    if cmd_only in ["form", ".form"]: return await cmd_form(u, c)
+    if cmd_only in ["fee", "fees", ".fee", ".fees"]: 
+        c.args = []
+        return await cmd_fee(u, c)
+    if cmd_only in ["stats", ".stats"]: return await cmd_stats(u, c)
+    
+    parts = t.split()
+    cmd = parts[0].lower()
+    c.args = parts[1:]
+    
+    if cmd in ["deal", ".deal"]: return await cmd_deal(u, c)
+    if cmd in ["close", ".close"]: return await cmd_close(u, c)
+    if cmd in ["cancel", ".cancel"]: return await cmd_cancel(u, c)
+    if cmd in ["refund", ".refund"]: return await cmd_refund(u, c)
+    if cmd in ["hold", ".hold"]: return await cmd_hold(u, c)
+        
+    m_fee = re.match(r"^(?:\.|\/)?(?:fee|fees)(?:@\w+)?\s+(\d+(?:\.\d+)?)", tl)
+    if m_fee:
+        c.args = [m_fee.group(1)]
+        return await cmd_fee(u, c)
 
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))
-    app.add_handler(CommandHandler("c", cmd_c))
     app.add_handler(CommandHandler("settradeid", cmd_settradeid))
     app.add_handler(CommandHandler("minus", cmd_minus))
     app.add_handler(CommandHandler("unhold", cmd_unhold))
@@ -334,6 +377,11 @@ def main():
     app.add_handler(CommandHandler("removeadmin", cmd_removeadmin))
     app.add_handler(CommandHandler("admins", cmd_admins))
     app.add_handler(CommandHandler("chatid", cmd_chatid))
+    
+    # Core commands
+    app.add_handler(CommandHandler("fee", cmd_fee))
+    app.add_handler(CommandHandler("fees", cmd_fee))
+    app.add_handler(CommandHandler("c", cmd_fee))
     app.add_handler(CommandHandler("form", cmd_form))
     app.add_handler(CommandHandler("deal", cmd_deal))
     app.add_handler(CommandHandler("close", cmd_close))
@@ -342,6 +390,7 @@ def main():
     app.add_handler(CommandHandler("refund", cmd_refund))
     app.add_handler(CommandHandler("stats", cmd_stats))
     
+    # Catch all router for text without slash
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_router))
     
     port = int(os.environ.get("PORT", 10000))
@@ -352,4 +401,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-        
+            
