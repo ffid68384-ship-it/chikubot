@@ -216,6 +216,9 @@ async def cmd_report(u: Update, c: ContextTypes.DEFAULT_TYPE):
         return
     await u.message.reply_text(f"📋 <b>Deal Report Summary:</b>\nTotal Deals: {STATS['deals']}\nVolume: ₹{STATS['vol']:,.2f}\nFees: ₹{STATS['fees']:,.2f}", parse_mode="HTML")
 
+async def cmd_stats(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    await u.message.reply_text(f"📈 <b>@CHIKUESCROWSERVICE STATS</b>\n━━━━━━━━━━━━━━━━━━━\n🤝 <b>Total Deals:</b> {STATS['deals']}\n💼 <b>Total Volume:</b> ₹{STATS['vol']:,.2f}\n💵 <b>Total Fees:</b> ₹{STATS['fees']:,.2f}\n📱 <b>RG :</b> @HARSHALxNXT", parse_mode="HTML")
+
 async def cmd_coowneradd(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not u.effective_user or u.effective_user.id != OWNER_ID:
         await u.message.reply_text("⚠️ Owner only command!")
@@ -415,4 +418,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-        
